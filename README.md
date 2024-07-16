@@ -1,5 +1,5 @@
 # fast-cli
-Originally made by gesquive/fast-cli, this is a fork of the original project with some minor changes to update it to the latest version of go and to add some additional features.
+Originally made by github.com/gesquive/fast-cli, this is a fork of the original project with some minor changes to update it to the latest version of go and to add some additional features. All credits go to the original author.
 
 fast-cli estimates your current internet download speed by performing a series of downloads from Netflix's fast.com servers.
 
