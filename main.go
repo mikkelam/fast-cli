@@ -29,7 +29,7 @@ func main() {
 	displayVersion = fmt.Sprintf("%s-%s (built %s)", version, commit, date)
 	app := &cli.App{
 		Name:    "fast-cli",
-		Usage:   "Estimates your current internet download speed",
+		Usage:   "Estimate connection speed using fast.com", // homebrew test expects this string
 		Version: displayVersion,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
