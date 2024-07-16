@@ -1,3 +1,4 @@
+fast-cli
 /bin/*
 vendor/*
 dist/*
@@ -5,3 +6,5 @@ dist/*
 *.bak
 
 fast-cli
+
+dist/

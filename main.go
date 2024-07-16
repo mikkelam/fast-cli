@@ -1,91 +1,93 @@
 package main
 
-import "os"
-import "fmt"
-import "io"
-import "net/http"
-import "strconv"
-import "time"
+import (
+	"fmt"
+	"io"
+	"mikkelam/fast-cli/fast"
+	"mikkelam/fast-cli/format"
+	"mikkelam/fast-cli/meters"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
 
-import "github.com/spf13/cobra"
-import "github.com/gesquive/cli"
-import "github.com/gesquive/fast-cli/fast"
-import "github.com/gesquive/fast-cli/format"
-import "github.com/gesquive/fast-cli/meters"
+	"github.com/urfave/cli/v2"
+)
 
-var version = "v0.2.10"
-var dirty = ""
+var (
+	version = "dev"
+	commit  = "dirty"
+	date    = "unknown"
+)
 var displayVersion string
 
-var cfgFile string
 var logDebug bool
 var notHTTPS bool
 var simpleProgress bool
-var showVersion bool
-
-//RootCmd is the only command
-var RootCmd = &cobra.Command{
-	Use:   "fast-cli",
-	Short: "Estimates your current internet download speed",
-	Long:  `fast-cli estimates your current internet download speed by performing a series of downloads from Netflix's fast.com servers.`,
-	Run:   run,
-}
 
 func main() {
-	displayVersion = fmt.Sprintf("fast-cli %s%s",
-		version,
-		dirty)
-	Execute(displayVersion)
-}
+	displayVersion = fmt.Sprintf("fast-cli %s-%s - built %s", version, commit, date)
+	app := &cli.App{
+		Name:    "fast-cli",
+		Usage:   "Estimates your current internet download speed",
+		Version: displayVersion,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:        "no-https",
+				Aliases:     []string{"n"},
+				Usage:       "Do not use HTTPS when connecting",
+				Destination: &notHTTPS,
+			},
+			&cli.BoolFlag{
+				Name:        "simple",
+				Aliases:     []string{"s"},
+				Usage:       "Only display the result, no dynamic progress bar",
+				Destination: &simpleProgress,
+			},
+			&cli.BoolFlag{
+				Name:        "debug",
+				Aliases:     []string{"D"},
+				Usage:       "Write debug messages to console",
+				Destination: &logDebug,
+				Hidden:      true,
+			},
+		},
+		Action: run,
+	}
 
-// Execute adds all child commands to the root command sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute(version string) {
-	displayVersion = version
-	RootCmd.SetHelpTemplate(fmt.Sprintf("%s\nVersion:\n  github.com/gesquive/%s\n",
-		RootCmd.HelpTemplate(), displayVersion))
-	if err := RootCmd.Execute(); err != nil {
+	err := app.Run(os.Args)
+	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
 }
 
-func init() {
-	cobra.OnInitialize(initLog)
-
-	RootCmd.PersistentFlags().BoolVarP(&notHTTPS, "no-https", "n", false, "Do not use HTTPS when connecting")
-	RootCmd.PersistentFlags().BoolVarP(&simpleProgress, "simple", "s", false, "Only display the result, no dynamic progress bar")
-	RootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "Display the version number and exit")
-	RootCmd.PersistentFlags().BoolVarP(&logDebug, "debug", "D", false, "Write debug messages to console")
-
-	RootCmd.PersistentFlags().MarkHidden("debug")
-	//TODO: Allow to estimate using time or size
-}
-
 func initLog() {
-	cli.SetPrintLevel(cli.LevelInfo)
 	if logDebug {
-		cli.SetPrintLevel(cli.LevelDebug)
+		fmt.Println("Debug mode enabled")
 	}
 	if notHTTPS {
-		cli.Debugln("Not using HTTPS")
+		fmt.Println("Not using HTTPS")
 	} else {
-		cli.Debugln("Using HTTPS")
+		fmt.Println("Using HTTPS")
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {
-	if showVersion {
-		cli.Infoln(displayVersion)
-		os.Exit(0)
+func run(c *cli.Context) error {
+	initLog()
+
+	if c.Bool("version") {
+		fmt.Println(displayVersion)
+		return nil
 	}
+
 	count := uint64(3)
 	fast.UseHTTPS = !notHTTPS
 	urls := fast.GetDlUrls(count)
-	cli.Debugf("Got %d from fast service\n", len(urls))
+	fmt.Printf("Got %d from fast service\n", len(urls))
 
 	if len(urls) == 0 {
-		cli.Warnf("Using fallback endpoint\n")
+		fmt.Println("Using fallback endpoint")
 		urls = append(urls, fast.GetDefaultURL())
 	}
 
@@ -93,9 +95,11 @@ func run(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 	}
+
+	return nil
 }
 
-func calculateBandwidth(urls []string) (err error) {
+func calculateBandwidth(urls []string) error {
 	client := &http.Client{}
 	count := uint64(len(urls))
 
@@ -129,7 +133,7 @@ func calculateBandwidth(urls []string) (err error) {
 				calculatedLength = 26214400
 			}
 			bytesToRead = uint64(calculatedLength)
-			cli.Debugf("Download Size=%d\n", bytesToRead)
+			fmt.Printf("Download Size=%d\n", bytesToRead)
 
 			tapMeter := io.TeeReader(response.Body, &primaryBandwidthReader)
 			go asyncCopy(i, ch, &bandwidthMeter, tapMeter)
@@ -137,18 +141,17 @@ func calculateBandwidth(urls []string) (err error) {
 			// Start reading
 			go asyncCopy(i, ch, &bandwidthMeter, response.Body)
 		}
-
 	}
 
 	if !simpleProgress {
-		cli.Infof("Estimating current download speed\n")
+		fmt.Println("Estimating current download speed")
 	}
 	for {
 		select {
 		case results := <-ch:
 			if results.err != nil {
 				fmt.Fprintf(os.Stdout, "\n%v\n", results.err)
-				os.Exit(1)
+				return results.err
 			}
 
 			completed++
