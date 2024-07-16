@@ -26,7 +26,7 @@ var notHTTPS bool
 var simpleProgress bool
 
 func main() {
-	displayVersion = fmt.Sprintf("fast-cli %s-%s - built %s", version, commit, date)
+	displayVersion = fmt.Sprintf("%s-%s (built %s)", version, commit, date)
 	app := &cli.App{
 		Name:    "fast-cli",
 		Usage:   "Estimates your current internet download speed",
@@ -75,11 +75,6 @@ func initLog() {
 
 func run(c *cli.Context) error {
 	initLog()
-
-	if c.Bool("version") {
-		fmt.Println(displayVersion)
-		return nil
-	}
 
 	count := uint64(3)
 	fast.UseHTTPS = !notHTTPS

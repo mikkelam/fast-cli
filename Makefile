@@ -7,8 +7,8 @@
 GOCC := go
 
 # binary metadata
-VERSION := $(shell git describe --always --tags)
-COMMIT := $(shell git rev-parse HEAD)
+VERSION ?= $(shell git describe --always --tags)
+COMMIT ?= $(shell git rev-parse HEAD)
 DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GIT_COMMIT=$(shell git rev-parse HEAD)
 
