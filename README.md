@@ -6,11 +6,12 @@ fast-cli estimates your current internet download speed by performing a series o
 
 ## Installing
 
-### Compile
+### Compiling
 
-If you have go installed, you can compile and install the latest version of fast-cli with the following command:
+If you have go installed, you can compile the binary yourself by running the following command in the root of the project:
+
 ```console
-go get -u github.com/mikkelam/fast-cli
+make build
 ```
 
 ## Usage
@@ -32,6 +33,9 @@ Optionally, a hidden debug flag is available in case you need additional output.
 Hidden Flags:
   -D, --debug                  Include debug statements in log output
 ```
+
+# Making a release
+The project uses goreleaser and theres's github action to cross compile and create binaries for linux and darwin. To create a new release, you can create a new tag and push it to the repository. The github action will take care of the rest.
 
 ## Documentation
 

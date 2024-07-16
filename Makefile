@@ -31,11 +31,12 @@ help:
 	 awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2}'
 	@echo
 
-# .PHONY: build
-# build: ## Compile the project
-# 	@echo "Building ${OWNER} ${BIN_NAME} ${VERSION}"
-# 	@echo "GOPATH=${GOPATH}"
-# 	${GOCC} build -ldflags "-X main.version=${VERSION} -X main.dirty=${GIT_DIRTY} -X main.date=${DATE} -X main.commit=${COMMIT}" -o ${BIN_NAME}
+
+.PHONY: build
+build: ## Compile the project
+	@echo "Building ${OWNER} ${BIN_NAME} ${VERSION}"
+	@echo "GOPATH=${GOPATH}"
+	${GOCC} build -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.commit=${COMMIT}" -o ${BIN_NAME}
 
 .PHONY: deps
 deps: ## Download project dependencies
