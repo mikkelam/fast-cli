@@ -7,6 +7,22 @@ fast-cli estimates your current internet download speed by performing a series o
 
 ## Installing
 
+### Downloading a Prebuilt Binary
+
+1. Visit the [latest releases page](https://github.com/mikkelam/fast-cli/releases/latest) of the `fast-cli` repository.
+2. Download the appropriate binary for your platform.
+3. Extract the downloaded file.
+4. Move the binary to a directory included in your `PATH` (e.g., `/usr/local/bin`).
+
+For example on an apple silicon mac:
+```console
+curl -L https://github.com/mikkelam/fast-cli/releases/latest/download/fast-cli_Darwin_arm64.tar.gz | tar xz
+
+# Move the binary to /usr/local/bin
+sudo mv fast-cli /usr/local/bin
+```
+
+
 ### Compiling
 
 If you have go installed, you can compile the binary yourself by running the following command in the root of the project:
