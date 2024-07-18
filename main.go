@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"mikkelam/fast-cli/fast"
 	"mikkelam/fast-cli/format"
 	"mikkelam/fast-cli/meters"
@@ -24,6 +25,7 @@ var displayVersion string
 var logDebug bool
 var notHTTPS bool
 var simpleProgress bool
+var urlCount *uint64 = nil
 
 func main() {
 	displayVersion = fmt.Sprintf("%s-%s (built %s)", version, commit, date)
@@ -64,7 +66,8 @@ func main() {
 
 func initLog() {
 	if logDebug {
-		fmt.Println("Debug mode enabled")
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+		slog.Debug("Debug logging enabled")
 	}
 	if notHTTPS {
 		fmt.Println("Not using HTTPS")
@@ -76,9 +79,9 @@ func initLog() {
 func run(c *cli.Context) error {
 	initLog()
 
-	count := uint64(3)
 	fast.UseHTTPS = !notHTTPS
-	urls := fast.GetDlUrls(count)
+	// The api currently only returns 4 urls max
+	urls := fast.GetDlUrls(4)
 	fmt.Printf("Got %d from fast service\n", len(urls))
 
 	if len(urls) == 0 {

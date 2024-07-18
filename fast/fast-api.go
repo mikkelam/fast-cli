@@ -23,8 +23,7 @@ func GetDlUrls(urlCount uint64) (urls []string) {
 
 	url := fmt.Sprintf("%s://api.fast.com/netflix/speedtest?https=%t&token=%s&urlCount=%d",
 		httpProtocol, UseHTTPS, token, urlCount)
-	// fmt.Printf("url=%s\n", url)
-	slog.Debug("getting url list from %s", url)
+	slog.Debug(fmt.Sprintf("getting download urls from %s", url))
 
 	jsonData, _ := getPage(url)
 
@@ -34,7 +33,7 @@ func GetDlUrls(urlCount uint64) (urls []string) {
 	slog.Debug("urls:")
 	for _, arr := range reUrls {
 		urls = append(urls, arr[1])
-		slog.Debug(" - %s", arr[1])
+		slog.Debug(fmt.Sprintf(" - %s", arr[1]))
 	}
 
 	return
@@ -62,7 +61,7 @@ func getFastToken() (token string) {
 	scriptNames := re.FindAllString(fastBody, 1)
 
 	scriptURL := fmt.Sprintf("%s/%s", baseURL, scriptNames[0])
-	slog.Debug("trying to get fast api token from %s", scriptURL)
+	slog.Debug(fmt.Sprintf("trying to get fast api token from %s", scriptURL))
 
 	// Extract the token
 	scriptBody, _ := getPage(scriptURL)
@@ -72,7 +71,7 @@ func getFastToken() (token string) {
 
 	if len(tokens) > 0 {
 		token = tokens[0][7 : len(tokens[0])-1]
-		slog.Debug("token found: %s", token)
+		slog.Debug(fmt.Sprintf("found token %s", token))
 	} else {
 		slog.Warn("no token found")
 	}
