@@ -1,4 +1,3 @@
-``md
 # fast-cli
 
 `fast-cli` estimates your current internet download/upload speed by performing a series of requests to fast.com servers.
