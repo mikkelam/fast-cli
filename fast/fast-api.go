@@ -12,8 +12,8 @@ import (
 // UseHTTPS sets if HTTPS is used
 var UseHTTPS = true
 
-// GetDlUrls returns a list of urls to the fast api downloads
-func GetDlUrls(urlCount uint64) (urls []string) {
+// GetUrls returns a list of urls to the fast api downloads
+func GetUrls(urlCount uint64) (urls []string) {
 	token := getFastToken()
 
 	httpProtocol := "https"
@@ -57,7 +57,7 @@ func getFastToken() (token string) {
 	fastBody, _ := getPage(baseURL)
 
 	// Extract the app script url
-	re := regexp.MustCompile("app-.*\\.js")
+	re := regexp.MustCompile(`app-.*\.js`)
 	scriptNames := re.FindAllString(fastBody, 1)
 
 	scriptURL := fmt.Sprintf("%s/%s", baseURL, scriptNames[0])

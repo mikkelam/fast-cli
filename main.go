@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -9,29 +10,29 @@ import (
 	"mikkelam/fast-cli/meters"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/urfave/cli/v2"
 )
 
 var (
-	version = "dev"
-	commit  = "dirty"
-	date    = "unknown"
+	version        = "dev"
+	commit         = "dirty"
+	date           = "unknown"
+	displayVersion string
+	logDebug       bool
+	notHTTPS       bool
+	simpleProgress bool
+	checkUpload    bool
 )
-var displayVersion string
-
-var logDebug bool
-var notHTTPS bool
-var simpleProgress bool
-var urlCount *uint64 = nil
+var spinnerStates = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var spinnerIndex = 0
 
 func main() {
 	displayVersion = fmt.Sprintf("%s-%s (built %s)", version, commit, date)
 	app := &cli.App{
 		Name:    "fast-cli",
-		Usage:   "Estimate connection speed using fast.com", // homebrew test expects this string
+		Usage:   "Estimate connection speed using fast.com",
 		Version: displayVersion,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
@@ -53,14 +54,19 @@ func main() {
 				Destination: &logDebug,
 				Hidden:      true,
 			},
+			&cli.BoolFlag{
+				Name:        "upload",
+				Aliases:     []string{"u"},
+				Usage:       "Test upload speed as well",
+				Destination: &checkUpload,
+			},
 		},
 		Action: run,
 	}
 
-	err := app.Run(os.Args)
-	if err != nil {
+	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
-		os.Exit(-1)
+		os.Exit(1)
 	}
 }
 
@@ -69,10 +75,10 @@ func initLog() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 		slog.Debug("Debug logging enabled")
 	}
+
+	slog.Debug("Using HTTPS")
 	if notHTTPS {
-		fmt.Println("Not using HTTPS")
-	} else {
-		fmt.Println("Using HTTPS")
+		slog.Debug("Not using HTTPS")
 	}
 }
 
@@ -80,113 +86,181 @@ func run(c *cli.Context) error {
 	initLog()
 
 	fast.UseHTTPS = !notHTTPS
-	// The api currently only returns 4 urls max
-	urls := fast.GetDlUrls(4)
-	fmt.Printf("Got %d from fast service\n", len(urls))
+	urls := fast.GetUrls(4)
+
+	slog.Debug("Got %d urls from fast.com service\n", len(urls))
 
 	if len(urls) == 0 {
 		fmt.Println("Using fallback endpoint")
 		urls = append(urls, fast.GetDefaultURL())
 	}
 
-	err := calculateBandwidth(urls)
+	downloadSpeed, err := measureDownloadSpeed(urls)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		fmt.Fprintf(os.Stderr, "Error measuring download speed: %v\n", err)
+		return err
 	}
+
+	var uploadSpeed string
+	if checkUpload {
+		uploadSpeed, err = measureUploadSpeed(urls)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error measuring upload speed: %v\n", err)
+			return err
+		}
+	}
+
+	printFinalSpeeds(downloadSpeed, uploadSpeed, checkUpload)
 
 	return nil
 }
 
-func calculateBandwidth(urls []string) error {
+func printFinalSpeeds(downloadSpeed, uploadSpeed string, checkUpload bool) {
+	fmt.Println("\n🚀 Final estimated speeds:")
+	fmt.Printf("   Download: %s\n", downloadSpeed)
+	if checkUpload {
+		fmt.Printf("   Upload:   %s\n", uploadSpeed)
+	}
+}
+
+func measureDownloadSpeed(urls []string) (string, error) {
 	client := &http.Client{}
 	count := uint64(len(urls))
+	primaryBandwidthMeter := meters.BandwidthMeter{}
+	completed := make(chan bool)
 
-	primaryBandwidthReader := meters.BandwidthMeter{}
-	bandwidthMeter := meters.BandwidthMeter{}
-	ch := make(chan *copyResults, 1)
-	bytesToRead := uint64(0)
-	completed := uint64(0)
+	primaryBandwidthMeter.Start()
+	fmt.Println("⬇️ Estimating download speed...")
 
-	for i := uint64(0); i < count; i++ {
-		// Create the HTTP request
-		request, err := http.NewRequest("GET", urls[i], nil)
-		if err != nil {
-			return err
-		}
-		request.Header.Set("User-Agent", displayVersion)
+	for _, url := range urls {
+		go func(url string) {
+			defer func() { completed <- true }() // Ensure completion signal
 
-		// Get the HTTP Response
-		response, err := client.Do(request)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-
-		// Set information for the leading index
-		if i == 0 {
-			// Try to get content length
-			contentLength := response.Header.Get("Content-Length")
-			calculatedLength, err := strconv.Atoi(contentLength)
+			request, err := http.NewRequest("GET", url, nil)
 			if err != nil {
-				calculatedLength = 26214400
+				slog.Error("Failed to create request", "error", err)
+				return
 			}
-			bytesToRead = uint64(calculatedLength)
-			fmt.Printf("Download Size=%d\n", bytesToRead)
+			request.Header.Set("User-Agent", displayVersion)
 
-			tapMeter := io.TeeReader(response.Body, &primaryBandwidthReader)
-			go asyncCopy(i, ch, &bandwidthMeter, tapMeter)
-		} else {
-			// Start reading
-			go asyncCopy(i, ch, &bandwidthMeter, response.Body)
+			response, err := client.Do(request)
+			if err != nil {
+				slog.Error("Failed to perform request", "error", err)
+				return
+			}
+			defer response.Body.Close()
+
+			tapMeter := io.TeeReader(response.Body, &primaryBandwidthMeter)
+			_, err = io.Copy(io.Discard, tapMeter)
+			if err != nil {
+				slog.Error("Failed to copy response body", "error", err)
+				return
+			}
+		}(url)
+	}
+
+	monitorProgress(&primaryBandwidthMeter, uint64(count*26214400), completed, count)
+
+	finalSpeed := format.BitsPerSec(primaryBandwidthMeter.Bandwidth())
+	return finalSpeed, nil
+}
+
+func measureUploadSpeed(urls []string) (string, error) {
+	client := &http.Client{}
+	uploadData := make([]byte, 26214400) // 25 MB
+	chunkSize := 1024 * 1024             // 1 MB chunk
+	count := uint64(len(urls))
+
+	primaryBandwidthMeter := meters.BandwidthMeter{}
+	completed := make(chan bool)
+
+	primaryBandwidthMeter.Start()
+	fmt.Println("\n⬆️ Estimating upload speed...")
+
+	for _, url := range urls {
+		go func(url string) {
+			defer func() { completed <- true }() // Ensure completion signal
+
+			for offset := 0; offset < len(uploadData); offset += chunkSize {
+				tapMeter := bytes.NewReader(uploadData[offset:min(offset+chunkSize, len(uploadData))])
+
+				request, err := http.NewRequest("POST", url, tapMeter)
+				if err != nil {
+					slog.Error("Failed to create request", "error", err)
+					return
+				}
+				request.Header.Set("User-Agent", displayVersion)
+				request.Header.Set("Content-Type", "application/octet-stream")
+				request.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d",
+					offset, min(offset+chunkSize-1, len(uploadData)-1), len(uploadData)))
+
+				tapReadMeter := io.TeeReader(tapMeter, &primaryBandwidthMeter)
+				buffer := &bytes.Buffer{}
+				_, err = io.Copy(buffer, tapReadMeter)
+				if err != nil {
+					slog.Error("Failed to copy request body", "error", err)
+					return
+				}
+				request.Body = io.NopCloser(buffer)
+				resp, err := client.Do(request)
+				if err != nil {
+					slog.Error("Failed to perform request", "error", err)
+					return
+				}
+				resp.Body.Close()
+				if err != nil {
+					slog.Error("Failed to close response body", "error", err)
+					return
+				}
+			}
+		}(url)
+	}
+
+	monitorProgress(&primaryBandwidthMeter, uint64(count*26214400), completed, count)
+
+	finalSpeed := format.BitsPerSec(primaryBandwidthMeter.Bandwidth())
+	return finalSpeed, nil
+}
+
+func monitorProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64, completed chan bool, total uint64) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	var completeCount uint64
+
+	for range ticker.C {
+		if !simpleProgress {
+			printProgress(bandwidthMeter, bytesToRead, completeCount, total)
 		}
-	}
 
-	if !simpleProgress {
-		fmt.Println("Estimating current download speed")
-	}
-	for {
 		select {
-		case results := <-ch:
-			if results.err != nil {
-				fmt.Fprintf(os.Stdout, "\n%v\n", results.err)
-				return results.err
+		case <-completed:
+			completeCount++
+			if completeCount == total {
+				printProgress(bandwidthMeter, bytesToRead, completeCount, total)
+				return
 			}
-
-			completed++
-			if !simpleProgress {
-				fmt.Printf("\r%s - %s",
-					format.BitsPerSec(bandwidthMeter.Bandwidth()),
-					format.Percent(primaryBandwidthReader.BytesRead(), bytesToRead))
-				fmt.Printf("  \n")
-				fmt.Printf("Completed in %.1f seconds\n", bandwidthMeter.Duration().Seconds())
-			} else {
-				fmt.Printf("%s\n", format.BitsPerSec(bandwidthMeter.Bandwidth()))
-			}
-			return nil
-		case <-time.After(100 * time.Millisecond):
-			if !simpleProgress {
-				fmt.Printf("\r%s - %s",
-					format.BitsPerSec(bandwidthMeter.Bandwidth()),
-					format.Percent(primaryBandwidthReader.BytesRead(), bytesToRead))
-			}
+		default:
 		}
 	}
 }
 
-type copyResults struct {
-	index        uint64
-	bytesWritten uint64
-	err          error
-}
+func printProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead, completed, count uint64) {
+	if !simpleProgress {
+		// Cycle through spinner states
+		spinner := spinnerStates[spinnerIndex]
+		spinnerIndex = (spinnerIndex + 1) % len(spinnerStates)
 
-func asyncCopy(index uint64, channel chan *copyResults, writer io.Writer, reader io.Reader) {
-	bytesWritten, err := io.Copy(writer, reader)
-	channel <- &copyResults{index, uint64(bytesWritten), err}
-}
-
-func sumArr(array []uint64) (sum uint64) {
-	for i := 0; i < len(array); i++ {
-		sum = sum + array[i]
+		fmt.Printf("\r%s %s - %s completed",
+			spinner,
+			format.BitsPerSec(bandwidthMeter.Bandwidth()),
+			format.Percent(bandwidthMeter.BytesRead(), bytesToRead))
 	}
-	return
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
