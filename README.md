@@ -3,6 +3,7 @@ Originally made by github.com/gesquive/fast-cli, this is a fork of the original 
 
 fast-cli estimates your current internet download speed by performing a series of downloads from Netflix's fast.com servers.
 
+![Demo](imgs/fast-cli.svg)
 
 ## Installing
 
@@ -24,6 +25,7 @@ Usage:
 
 Flags:
   -h, --help       help for fast-cli
+  -u, --upload     Measure upload speed along with download speed
   -n, --no-https   Do not use HTTPS when connecting
   -s, --simple     Only display the result, no dynamic progress bar
       --version    Display the version number and exit
@@ -36,10 +38,6 @@ Hidden Flags:
 
 # Making a release
 The project uses goreleaser and theres's github action to cross compile and create binaries for linux and darwin. To create a new release, you can create a new tag and push it to the repository. The github action will take care of the rest.
-
-## Documentation
-
-This documentation can be found at github.com/mikkelam/fast-cli
 
 ## License
 
