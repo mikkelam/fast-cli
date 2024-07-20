@@ -1,4 +1,4 @@
-name: build on PR
+name: Build binary on PR
 
 on:
   pull_request:
@@ -17,5 +17,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: stable
+
       - name: Build
         run: make build
