@@ -24,6 +24,7 @@ var (
 	notHTTPS       bool
 	simpleProgress bool
 	checkUpload    bool
+	maxDuration    time.Duration
 )
 var spinnerStates = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 var spinnerIndex = 0
@@ -60,6 +61,14 @@ func main() {
 				Usage:       "Test upload speed as well",
 				Destination: &checkUpload,
 			},
+			&cli.DurationFlag{
+				Name:        "max-duration",
+				Aliases:     []string{"d"},
+				DefaultText: "6s",
+				Value:       time.Second * 6,
+				Usage:       "Maximum duration for the speed test (e.g., 30s, 1m)",
+				Destination: &maxDuration,
+			},
 		},
 		Action: run,
 	}
@@ -88,7 +97,7 @@ func run(c *cli.Context) error {
 	fast.UseHTTPS = !notHTTPS
 	urls := fast.GetUrls(4)
 
-	slog.Debug("Got %d urls from fast.com service\n", len(urls))
+	slog.Debug(fmt.Sprintf("Got %d urls from fast.com service\n", len(urls)))
 
 	if len(urls) == 0 {
 		fmt.Println("Using fallback endpoint")
@@ -130,7 +139,9 @@ func measureDownloadSpeed(urls []string) (string, error) {
 	completed := make(chan bool)
 
 	primaryBandwidthMeter.Start()
-	fmt.Println("⬇️ Estimating download speed...")
+	if !simpleProgress {
+		fmt.Println("⬇️ Estimating download speed...")
+	}
 
 	for _, url := range urls {
 		go func(url string) {
@@ -175,8 +186,9 @@ func measureUploadSpeed(urls []string) (string, error) {
 	completed := make(chan bool)
 
 	primaryBandwidthMeter.Start()
-	fmt.Println("\n⬆️ Estimating upload speed...")
-
+	if !simpleProgress {
+		fmt.Println("\n⬆️ Estimating upload speed...")
+	}
 	for _, url := range urls {
 		go func(url string) {
 			defer func() { completed <- true }() // Ensure completion signal
@@ -221,26 +233,33 @@ func measureUploadSpeed(urls []string) (string, error) {
 	finalSpeed := format.BitsPerSec(primaryBandwidthMeter.Bandwidth())
 	return finalSpeed, nil
 }
-
 func monitorProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64, completed chan bool, total uint64) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	timeout := time.After(maxDuration)
 	var completeCount uint64
 
-	for range ticker.C {
-		if !simpleProgress {
-			printProgress(bandwidthMeter, bytesToRead, completeCount, total)
-		}
-
+	for {
 		select {
+		case <-timeout:
+			if !simpleProgress {
+				printProgress(bandwidthMeter, bytesToRead, completeCount, total)
+				// fmt.Println("\n🕒 Max duration reached, terminating the test.")
+			}
+			return
+
+		case <-ticker.C:
+			if !simpleProgress {
+				printProgress(bandwidthMeter, bytesToRead, completeCount, total)
+			}
+
 		case <-completed:
 			completeCount++
 			if completeCount == total {
 				printProgress(bandwidthMeter, bytesToRead, completeCount, total)
 				return
 			}
-		default:
 		}
 	}
 }

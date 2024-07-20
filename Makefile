@@ -31,6 +31,10 @@ help:
 	 awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2}'
 	@echo
 
+.PHONY: lint
+lint: ## Run golangci-lint
+	@echo "Running golangci-lint"
+	@golangci-lint run
 
 .PHONY: build
 build: ## Compile the project
