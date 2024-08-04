@@ -5,15 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
-	"mikkelam/fast-cli/fast"
-	"mikkelam/fast-cli/utils"
-	format "mikkelam/fast-cli/utils"
-	meters "mikkelam/fast-cli/utils"
-	printer "mikkelam/fast-cli/utils"
 	"net/http"
 	"os"
 	"time"
+
+	"mikkelam/fast-cli/fast"
+	"mikkelam/fast-cli/utils"
 
 	"github.com/urfave/cli/v2"
 )
@@ -92,41 +89,45 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		printer.Println(err)
+		utils.Println(err)
 		os.Exit(1)
 	}
 }
 
-func initAppconfig() {
+func initApputils() {
 	utils.AppConfig.Debug = debugOutput
 	utils.AppConfig.JsonOutput = jsonOutput
 
 	if debugOutput {
-		printer.Debugln("Debug logging enabled")
+		utils.Debugln("Debug logging enabled")
 	}
 
-	printer.Debugln("Using HTTPS")
+	utils.Debugln("Using HTTPS")
 	if notHTTPS {
-		printer.Debugln("Not using HTTPS")
+		utils.Debugln("Not using HTTPS")
 	}
 }
 
 func run(c *cli.Context) error {
-	initAppconfig()
+	initApputils()
 
 	fast.UseHTTPS = !notHTTPS
-	urls := fast.GetUrls(4)
+	urls, err := fast.GetUrls(4)
+	if err != nil {
+		utils.Errorf("Error getting urls from fast.com service: %v\n", err)
+		return err
+	}
 
-	printer.Debugf("Got %d urls from fast.com service\n", len(urls))
+	utils.Debugf("Got %d urls from fast.com service\n", len(urls))
 
 	if len(urls) == 0 {
-		printer.Println("Using fallback endpoint")
+		utils.Println("Using fallback endpoint")
 		urls = append(urls, fast.GetDefaultURL())
 	}
 
 	downloadSpeed, err := measureDownloadSpeed(urls)
 	if err != nil {
-		printer.Fprintf(os.Stderr, "Error measuring download speed: %v\n", err)
+		utils.Fprintf(os.Stderr, "Error measuring download speed: %v\n", err)
 		return err
 	}
 
@@ -134,7 +135,7 @@ func run(c *cli.Context) error {
 	if checkUpload {
 		uploadSpeed, err = measureUploadSpeed(urls)
 		if err != nil {
-			printer.Fprintf(os.Stderr, "Error measuring upload speed: %v\n", err)
+			utils.Fprintf(os.Stderr, "Error measuring upload speed: %v\n", err)
 			return err
 		}
 	}
@@ -171,12 +172,12 @@ func printFinalSpeeds(downloadSpeed *Speed, uploadSpeed *Speed, checkUpload bool
 func measureDownloadSpeed(urls []string) (Speed, error) {
 	client := &http.Client{}
 	count := uint64(len(urls))
-	primaryBandwidthMeter := meters.BandwidthMeter{}
+	primaryBandwidthMeter := utils.BandwidthMeter{}
 	completed := make(chan bool)
 
 	primaryBandwidthMeter.Start()
 	if !simpleProgress {
-		printer.Println("⬇️ Estimating download speed...")
+		utils.Println("⬇️ Estimating download speed...")
 	}
 
 	for _, url := range urls {
@@ -185,14 +186,14 @@ func measureDownloadSpeed(urls []string) (Speed, error) {
 
 			request, err := http.NewRequest("GET", url, nil)
 			if err != nil {
-				slog.Error("Failed to create request", "error", err)
+				utils.Errorln("Failed to create request", "error", err)
 				return
 			}
 			request.Header.Set("User-Agent", displayVersion)
 
 			response, err := client.Do(request)
 			if err != nil {
-				slog.Error("Failed to perform request", "error", err)
+				utils.Errorln("Failed to perform request", "error", err)
 				return
 			}
 			defer response.Body.Close()
@@ -200,7 +201,7 @@ func measureDownloadSpeed(urls []string) (Speed, error) {
 			tapMeter := io.TeeReader(response.Body, &primaryBandwidthMeter)
 			_, err = io.Copy(io.Discard, tapMeter)
 			if err != nil {
-				slog.Error("Failed to copy response body", "error", err)
+				utils.Errorln("Failed to copy response body", "error", err)
 				return
 			}
 		}(url)
@@ -218,12 +219,12 @@ func measureUploadSpeed(urls []string) (Speed, error) {
 	chunkSize := 1024 * 1024             // 1 MB chunk
 	count := uint64(len(urls))
 
-	primaryBandwidthMeter := meters.BandwidthMeter{}
+	primaryBandwidthMeter := utils.BandwidthMeter{}
 	completed := make(chan bool)
 
 	primaryBandwidthMeter.Start()
 	if !simpleProgress {
-		printer.Println("\n⬆️ Estimating upload speed...")
+		utils.Println("\n⬆️ Estimating upload speed...")
 	}
 	for _, url := range urls {
 		go func(url string) {
@@ -234,7 +235,7 @@ func measureUploadSpeed(urls []string) (Speed, error) {
 
 				request, err := http.NewRequest("POST", url, tapMeter)
 				if err != nil {
-					slog.Error("Failed to create request", "error", err)
+					utils.Errorln("Failed to create request", "error", err)
 					return
 				}
 				request.Header.Set("User-Agent", displayVersion)
@@ -246,18 +247,18 @@ func measureUploadSpeed(urls []string) (Speed, error) {
 				buffer := &bytes.Buffer{}
 				_, err = io.Copy(buffer, tapReadMeter)
 				if err != nil {
-					slog.Error("Failed to copy request body", "error", err)
+					utils.Errorln("Failed to copy request body", "error", err)
 					return
 				}
 				request.Body = io.NopCloser(buffer)
 				resp, err := client.Do(request)
 				if err != nil {
-					slog.Error("Failed to perform request", "error", err)
+					utils.Errorln("Failed to perform request", "error", err)
 					return
 				}
 				resp.Body.Close()
 				if err != nil {
-					slog.Error("Failed to close response body", "error", err)
+					utils.Errorln("Failed to close response body", "error", err)
 					return
 				}
 			}
@@ -269,7 +270,7 @@ func measureUploadSpeed(urls []string) (Speed, error) {
 	speed, unit := utils.BitsPerSecWithUnit(primaryBandwidthMeter.Bandwidth())
 	return Speed{Speed: speed, Unit: unit}, nil
 }
-func monitorProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64, completed chan bool, total uint64) {
+func monitorProgress(bandwidthMeter *utils.BandwidthMeter, bytesToRead uint64, completed chan bool, total uint64) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -281,7 +282,7 @@ func monitorProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64, 
 		case <-timeout:
 			if !simpleProgress {
 				printProgress(bandwidthMeter, bytesToRead)
-				// printer.Println("\n🕒 Max duration reached, terminating the test.")
+				// utils.Println("\n🕒 Max duration reached, terminating the test.")
 			}
 			return
 
@@ -300,16 +301,16 @@ func monitorProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64, 
 	}
 }
 
-func printProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64) {
+func printProgress(bandwidthMeter *utils.BandwidthMeter, bytesToRead uint64) {
 	if !simpleProgress {
 		// Cycle through spinner states
 		spinner := spinnerStates[spinnerIndex]
 		spinnerIndex = (spinnerIndex + 1) % len(spinnerStates)
 
-		printer.Printf("\r%s %s - %s completed",
+		utils.Printf("\r%s %s - %s completed",
 			spinner,
-			format.BitsPerSec(bandwidthMeter.Bandwidth()),
-			format.Percent(bandwidthMeter.BytesRead(), bytesToRead))
+			utils.BitsPerSec(bandwidthMeter.Bandwidth()),
+			utils.Percent(bandwidthMeter.BytesRead(), bytesToRead))
 	}
 }
 

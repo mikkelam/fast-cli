@@ -2,9 +2,10 @@ package fast
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
-	"log/slog"
+	printer "mikkelam/fast-cli/utils"
 	"net/http"
 	"regexp"
 )
@@ -13,8 +14,11 @@ import (
 var UseHTTPS = true
 
 // GetUrls returns a list of urls to the fast api downloads
-func GetUrls(urlCount uint64) (urls []string) {
-	token := getFastToken()
+func GetUrls(urlCount uint64) (urls []string, err error) {
+	token, err := getFastToken()
+	if err != nil {
+		return nil, err
+	}
 
 	httpProtocol := "https"
 	if !UseHTTPS {
@@ -23,17 +27,17 @@ func GetUrls(urlCount uint64) (urls []string) {
 
 	url := fmt.Sprintf("%s://api.fast.com/netflix/speedtest?https=%t&token=%s&urlCount=%d",
 		httpProtocol, UseHTTPS, token, urlCount)
-	slog.Debug(fmt.Sprintf("getting download urls from %s", url))
+	printer.Debugln(fmt.Sprintf("getting download urls from %s", url))
 
 	jsonData, _ := getPage(url)
 
 	re := regexp.MustCompile("(?U)\"url\":\"(.*)\"")
 	reUrls := re.FindAllStringSubmatch(jsonData, -1)
 
-	slog.Debug("urls:")
+	printer.Debugln("urls:")
 	for _, arr := range reUrls {
 		urls = append(urls, arr[1])
-		slog.Debug(fmt.Sprintf(" - %s", arr[1]))
+		printer.Debugln(fmt.Sprintf(" - %s", arr[1]))
 	}
 
 	return
@@ -49,7 +53,7 @@ func GetDefaultURL() (url string) {
 	return
 }
 
-func getFastToken() (token string) {
+func getFastToken() (token string, err error) {
 	baseURL := "https://fast.com"
 	if !UseHTTPS {
 		baseURL = "http://fast.com"
@@ -61,7 +65,7 @@ func getFastToken() (token string) {
 	scriptNames := re.FindAllString(fastBody, 1)
 
 	scriptURL := fmt.Sprintf("%s/%s", baseURL, scriptNames[0])
-	slog.Debug(fmt.Sprintf("trying to get fast api token from %s", scriptURL))
+	printer.Debugln(fmt.Sprintf("trying to get fast api token from %s", scriptURL))
 
 	// Extract the token
 	scriptBody, _ := getPage(scriptURL)
@@ -71,12 +75,13 @@ func getFastToken() (token string) {
 
 	if len(tokens) > 0 {
 		token = tokens[0][7 : len(tokens[0])-1]
-		slog.Debug(fmt.Sprintf("found token %s", token))
+		printer.Debugln(fmt.Sprintf("found token %s", token))
 	} else {
-		slog.Warn("no token found")
-	}
+		err := errors.New("could not find fast api token")
+		printer.Debugln(err)
 
-	return
+	}
+	return token, err
 }
 
 func getPage(url string) (contents string, err error) {

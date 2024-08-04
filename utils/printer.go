@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"io"
+	"os"
 )
 
 func PrintJSON(format string, a ...any) {
@@ -45,4 +46,12 @@ func Print(a ...any) {
 	if !AppConfig.JsonOutput {
 		fmt.Print(a...)
 	}
+}
+
+func Errorln(a ...any) {
+	fmt.Fprintln(os.Stderr, a...)
+}
+
+func Errorf(format string, a ...any) {
+	fmt.Fprintf(os.Stderr, format, a...)
 }

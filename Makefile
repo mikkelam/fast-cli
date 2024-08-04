@@ -36,19 +36,16 @@ lint: ## Run golangci-lint
 	@echo "Running golangci-lint"
 	@golangci-lint run
 
+format: ## Run go fmt
+	@echo "Running go fmt"
+	@go fmt ./...
+
 .PHONY: build
 build: ## Compile the project
 	@echo "Building ${OWNER} ${BIN_NAME} ${VERSION}"
 	@echo "GOPATH=${GOPATH}"
-	${GOCC} build -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.commit=${COMMIT}" -o ${BIN_NAME}
+	${GOCC} build -a -ldflags "-w -s -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.commit=${COMMIT}" -o ${BIN_NAME}
 
-.PHONY: deps
-deps: ## Download project dependencies
-	${GOCC} mod tidy
-
-.PHONY: test
-test: ## Run golang tests
-	${GOCC} test ./...
 
 
 .PHONY: clean
