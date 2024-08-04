@@ -28,5 +28,5 @@ func Bytes(bytes uint64) string {
 
 // Percent formats a percent
 func Percent(current uint64, total uint64) string {
-	return fmt.Sprintf("%5.1f%%", float64(current)/float64(total)*100)
+	return fmt.Sprintf("%4.1f%%", float64(current)/float64(total)*100)
 }

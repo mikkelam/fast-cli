@@ -164,7 +164,7 @@ func printFinalSpeeds(downloadSpeed *Speed, uploadSpeed *Speed, checkUpload bool
 		utils.Printf("\n🚀 Final estimated speeds:\n")
 		utils.Printf("   Download: %.2f %s\n", downloadSpeed.Speed, downloadSpeed.Unit)
 		if checkUpload && uploadSpeed != nil {
-			utils.Printf("   Upload:   %.2f %s\n", uploadSpeed.Speed, uploadSpeed.Unit)
+			utils.Printf("   Upload:    %.2f %s\n", uploadSpeed.Speed, uploadSpeed.Unit)
 		}
 	}
 }
