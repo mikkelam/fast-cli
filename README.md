@@ -40,6 +40,7 @@ Flags:
   -n, --no-https   Do not use HTTPS when connecting
   -s, --simple     Only display the result, no dynamic progress bar
   -d, --duration   Duration download and upload tests should run (default 6s)
+      --json       Write output in JSON format instead
       --version    Display the version number and exit
 ```
 Optionally, a hidden debug flag is available in case you need additional output.
