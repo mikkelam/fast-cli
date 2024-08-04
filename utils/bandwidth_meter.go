@@ -1,4 +1,4 @@
-package meters
+package utils
 
 import "time"
 
