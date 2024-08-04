@@ -17,7 +17,7 @@ Originally forked from [gesquive/fast-cli](https://github.com/gesquive/fast-cli)
 
 For example, on an Apple Silicon Mac:
 ```console
-curl -L https://github.com/mikkelam/fast-cli/releases/latest/download/fast-cli_Darwin_arm64.tar.gz | tar xz
+curl -L https://github.com/mikkelam/fast-cli/releases/latest/download/fast-cli_darwin_arm64.tar.gz   | tar xz
 sudo mv fast-cli /usr/local/bin
 ```
 
