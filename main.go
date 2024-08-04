@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"mikkelam/fast-cli/fast"
-	"mikkelam/fast-cli/format"
-	"mikkelam/fast-cli/meters"
+	"mikkelam/fast-cli/utils"
+	format "mikkelam/fast-cli/utils"
+	meters "mikkelam/fast-cli/utils"
+	printer "mikkelam/fast-cli/utils"
 	"net/http"
 	"os"
 	"time"
@@ -15,16 +18,26 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+type Speed struct {
+	Speed float64 `json:"speed"`
+	Unit  string  `json:"unit"`
+}
+type SpeedResults struct {
+	Download Speed `json:"download"`
+	Upload   Speed `json:"upload,omitempty"`
+}
+
 var (
 	version        = "dev"
 	commit         = "dirty"
 	date           = "unknown"
 	displayVersion string
-	logDebug       bool
 	notHTTPS       bool
 	simpleProgress bool
 	checkUpload    bool
 	maxDuration    time.Duration
+	jsonOutput     bool
+	debugOutput    bool
 )
 var spinnerStates = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 var spinnerIndex = 0
@@ -49,13 +62,6 @@ func main() {
 				Destination: &simpleProgress,
 			},
 			&cli.BoolFlag{
-				Name:        "debug",
-				Aliases:     []string{"D"},
-				Usage:       "Write debug messages to console",
-				Destination: &logDebug,
-				Hidden:      true,
-			},
-			&cli.BoolFlag{
 				Name:        "upload",
 				Aliases:     []string{"u"},
 				Usage:       "Test upload speed as well",
@@ -69,70 +75,100 @@ func main() {
 				Usage:       "Maximum duration for the speed test (e.g., 30s, 1m)",
 				Destination: &maxDuration,
 			},
+			&cli.BoolFlag{
+				Name:        "json",
+				Usage:       "Output in JSON format",
+				Destination: &jsonOutput,
+			},
+			&cli.BoolFlag{
+				Name:        "debug",
+				Aliases:     []string{"D"},
+				Usage:       "Write debug messages to console",
+				Destination: &debugOutput,
+				Hidden:      true,
+			},
 		},
 		Action: run,
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Println(err)
+		printer.Println(err)
 		os.Exit(1)
 	}
 }
 
-func initLog() {
-	if logDebug {
-		slog.SetLogLoggerLevel(slog.LevelDebug)
-		slog.Debug("Debug logging enabled")
+func initAppconfig() {
+	utils.AppConfig.Debug = debugOutput
+	utils.AppConfig.JsonOutput = jsonOutput
+
+	if debugOutput {
+		printer.Debugln("Debug logging enabled")
 	}
 
-	slog.Debug("Using HTTPS")
+	printer.Debugln("Using HTTPS")
 	if notHTTPS {
-		slog.Debug("Not using HTTPS")
+		printer.Debugln("Not using HTTPS")
 	}
 }
 
 func run(c *cli.Context) error {
-	initLog()
+	initAppconfig()
 
 	fast.UseHTTPS = !notHTTPS
 	urls := fast.GetUrls(4)
 
-	slog.Debug(fmt.Sprintf("Got %d urls from fast.com service\n", len(urls)))
+	printer.Debugf("Got %d urls from fast.com service\n", len(urls))
 
 	if len(urls) == 0 {
-		fmt.Println("Using fallback endpoint")
+		printer.Println("Using fallback endpoint")
 		urls = append(urls, fast.GetDefaultURL())
 	}
 
 	downloadSpeed, err := measureDownloadSpeed(urls)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error measuring download speed: %v\n", err)
+		printer.Fprintf(os.Stderr, "Error measuring download speed: %v\n", err)
 		return err
 	}
 
-	var uploadSpeed string
+	var uploadSpeed Speed
 	if checkUpload {
 		uploadSpeed, err = measureUploadSpeed(urls)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error measuring upload speed: %v\n", err)
+			printer.Fprintf(os.Stderr, "Error measuring upload speed: %v\n", err)
 			return err
 		}
 	}
 
-	printFinalSpeeds(downloadSpeed, uploadSpeed, checkUpload)
+	printFinalSpeeds(&downloadSpeed, &uploadSpeed, checkUpload)
 
 	return nil
 }
 
-func printFinalSpeeds(downloadSpeed, uploadSpeed string, checkUpload bool) {
-	fmt.Println("\n🚀 Final estimated speeds:")
-	fmt.Printf("   Download: %s\n", downloadSpeed)
-	if checkUpload {
-		fmt.Printf("   Upload:   %s\n", uploadSpeed)
+func toJSON(v interface{}) string {
+	bytes, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(bytes)
+}
+
+func printFinalSpeeds(downloadSpeed *Speed, uploadSpeed *Speed, checkUpload bool) {
+	if jsonOutput {
+		results := SpeedResults{
+			Download: *downloadSpeed,
+			Upload:   *uploadSpeed,
+		}
+		utils.PrintJSON("%s\n", toJSON(results))
+	} else {
+		utils.Printf("\n🚀 Final estimated speeds:\n")
+		utils.Printf("   Download: %.2f %s\n", downloadSpeed.Speed, downloadSpeed.Unit)
+		if checkUpload && uploadSpeed != nil {
+			utils.Printf("   Upload:   %.2f %s\n", uploadSpeed.Speed, uploadSpeed.Unit)
+		}
 	}
 }
 
-func measureDownloadSpeed(urls []string) (string, error) {
+func measureDownloadSpeed(urls []string) (Speed, error) {
 	client := &http.Client{}
 	count := uint64(len(urls))
 	primaryBandwidthMeter := meters.BandwidthMeter{}
@@ -140,7 +176,7 @@ func measureDownloadSpeed(urls []string) (string, error) {
 
 	primaryBandwidthMeter.Start()
 	if !simpleProgress {
-		fmt.Println("⬇️ Estimating download speed...")
+		printer.Println("⬇️ Estimating download speed...")
 	}
 
 	for _, url := range urls {
@@ -172,11 +208,11 @@ func measureDownloadSpeed(urls []string) (string, error) {
 
 	monitorProgress(&primaryBandwidthMeter, uint64(count*26214400), completed, count)
 
-	finalSpeed := format.BitsPerSec(primaryBandwidthMeter.Bandwidth())
-	return finalSpeed, nil
+	speed, unit := utils.BitsPerSecWithUnit(primaryBandwidthMeter.Bandwidth())
+	return Speed{Speed: speed, Unit: unit}, nil
 }
 
-func measureUploadSpeed(urls []string) (string, error) {
+func measureUploadSpeed(urls []string) (Speed, error) {
 	client := &http.Client{}
 	uploadData := make([]byte, 26214400) // 25 MB
 	chunkSize := 1024 * 1024             // 1 MB chunk
@@ -187,7 +223,7 @@ func measureUploadSpeed(urls []string) (string, error) {
 
 	primaryBandwidthMeter.Start()
 	if !simpleProgress {
-		fmt.Println("\n⬆️ Estimating upload speed...")
+		printer.Println("\n⬆️ Estimating upload speed...")
 	}
 	for _, url := range urls {
 		go func(url string) {
@@ -230,8 +266,8 @@ func measureUploadSpeed(urls []string) (string, error) {
 
 	monitorProgress(&primaryBandwidthMeter, uint64(count*26214400), completed, count)
 
-	finalSpeed := format.BitsPerSec(primaryBandwidthMeter.Bandwidth())
-	return finalSpeed, nil
+	speed, unit := utils.BitsPerSecWithUnit(primaryBandwidthMeter.Bandwidth())
+	return Speed{Speed: speed, Unit: unit}, nil
 }
 func monitorProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64, completed chan bool, total uint64) {
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -244,33 +280,33 @@ func monitorProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64, 
 		select {
 		case <-timeout:
 			if !simpleProgress {
-				printProgress(bandwidthMeter, bytesToRead, completeCount, total)
-				// fmt.Println("\n🕒 Max duration reached, terminating the test.")
+				printProgress(bandwidthMeter, bytesToRead)
+				// printer.Println("\n🕒 Max duration reached, terminating the test.")
 			}
 			return
 
 		case <-ticker.C:
 			if !simpleProgress {
-				printProgress(bandwidthMeter, bytesToRead, completeCount, total)
+				printProgress(bandwidthMeter, bytesToRead)
 			}
 
 		case <-completed:
 			completeCount++
 			if completeCount == total {
-				printProgress(bandwidthMeter, bytesToRead, completeCount, total)
+				printProgress(bandwidthMeter, bytesToRead)
 				return
 			}
 		}
 	}
 }
 
-func printProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead, completed, count uint64) {
+func printProgress(bandwidthMeter *meters.BandwidthMeter, bytesToRead uint64) {
 	if !simpleProgress {
 		// Cycle through spinner states
 		spinner := spinnerStates[spinnerIndex]
 		spinnerIndex = (spinnerIndex + 1) % len(spinnerStates)
 
-		fmt.Printf("\r%s %s - %s completed",
+		printer.Printf("\r%s %s - %s completed",
 			spinner,
 			format.BitsPerSec(bandwidthMeter.Bandwidth()),
 			format.Percent(bandwidthMeter.BytesRead(), bytesToRead))

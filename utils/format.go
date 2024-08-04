@@ -1,12 +1,23 @@
-package format
+package utils
 
-import "fmt"
-import "github.com/dustin/go-humanize"
+import (
+	"fmt"
+	"math"
+
+	"github.com/dustin/go-humanize"
+)
 
 // BitsPerSec formats a byte count
 func BitsPerSec(bytes float64) string {
 	prettySize, prettyUnit := humanize.ComputeSI(bytes * 8)
 	return fmt.Sprintf("%7.2f %sbps", prettySize, prettyUnit)
+}
+
+func BitsPerSecWithUnit(bytes float64) (float64, string) {
+	prettySize, prettyUnit := humanize.ComputeSI(bytes * 8)
+	// Round to 2 decimal places
+	roundedSize := math.Round(prettySize*100) / 100
+	return roundedSize, fmt.Sprintf("%sbps", prettyUnit)
 }
 
 // Bytes formats a byte count
