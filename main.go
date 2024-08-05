@@ -67,8 +67,8 @@ func main() {
 			&cli.DurationFlag{
 				Name:        "max-duration",
 				Aliases:     []string{"d"},
-				DefaultText: "6s",
-				Value:       time.Second * 6,
+				DefaultText: "4s",
+				Value:       time.Second * 4,
 				Usage:       "Maximum duration for the speed test (e.g., 30s, 1m)",
 				Destination: &maxDuration,
 			},
@@ -213,7 +213,7 @@ func measureDownloadSpeed(urls []string) (Speed, error) {
 		}(url)
 	}
 
-	monitorProgress(&primaryBandwidthMeter, uint64(count*26214400), completed, count)
+	monitorProgress(&primaryBandwidthMeter, maxDuration, completed, count)
 
 	speed, unit := utils.BitsPerSecWithUnit(primaryBandwidthMeter.Bandwidth())
 	return Speed{Speed: speed, Unit: unit}, nil
@@ -271,55 +271,63 @@ func measureUploadSpeed(urls []string) (Speed, error) {
 		}(url)
 	}
 
-	monitorProgress(&primaryBandwidthMeter, uint64(count*26214400), completed, count)
+	monitorProgress(&primaryBandwidthMeter, maxDuration, completed, count)
 
 	speed, unit := utils.BitsPerSecWithUnit(primaryBandwidthMeter.Bandwidth())
 	return Speed{Speed: speed, Unit: unit}, nil
 }
-func monitorProgress(bandwidthMeter *utils.BandwidthMeter, bytesToRead uint64, completed chan bool, total uint64) {
+func monitorProgress(bandwidthMeter *utils.BandwidthMeter, maxDuration time.Duration, completed chan bool, total uint64) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	timeout := time.After(maxDuration)
+	start := time.Now()
 	var completeCount uint64
 
 	for {
 		select {
 		case <-timeout:
 			if !simpleProgress {
-				printProgress(bandwidthMeter, bytesToRead)
-				// utils.Println("\n🕒 Max duration reached, terminating the test.")
+				printProgress(bandwidthMeter, start, maxDuration)
 			}
 			return
 
 		case <-ticker.C:
 			if !simpleProgress {
-				printProgress(bandwidthMeter, bytesToRead)
+				printProgress(bandwidthMeter, start, maxDuration)
 			}
 
 		case <-completed:
 			completeCount++
 			if completeCount == total {
-				printProgress(bandwidthMeter, bytesToRead)
+				printProgress(bandwidthMeter, start, maxDuration, true)
 				return
 			}
 		}
 	}
 }
 
-func printProgress(bandwidthMeter *utils.BandwidthMeter, bytesToRead uint64) {
+func printProgress(bandwidthMeter *utils.BandwidthMeter, start time.Time, maxDuration time.Duration, forceComplete ...bool) {
 	if !simpleProgress {
-		// Cycle through spinner states
 		spinner := spinnerStates[spinnerIndex]
 		spinnerIndex = (spinnerIndex + 1) % len(spinnerStates)
 
-		utils.Printf("\r%s %s - %s completed",
+		elapsed := time.Since(start)
+		var percentComplete float64
+
+		// If forceComplete is provided and true, set percentComplete to 100
+		if len(forceComplete) > 0 && forceComplete[0] {
+			percentComplete = 100
+		} else {
+			percentComplete = (elapsed.Seconds() / maxDuration.Seconds()) * 100
+		}
+
+		utils.Printf("\r%s %s - %.2f%% completed",
 			spinner,
 			utils.BitsPerSec(bandwidthMeter.Bandwidth()),
-			utils.Percent(bandwidthMeter.BytesRead(), bytesToRead))
+			percentComplete)
 	}
 }
-
 func min(a, b int) int {
 	if a < b {
 		return a

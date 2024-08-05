@@ -39,7 +39,7 @@ Flags:
   -u, --upload     Measure upload speed along with download speed
   -n, --no-https   Do not use HTTPS when connecting
   -s, --simple     Only display the result, no dynamic progress bar
-  -d, --duration   Duration download and upload tests should run (default 6s)
+  -d, --duration   Duration download and upload tests should run (default 4s)
       --json       Write output in JSON format instead
       --version    Display the version number and exit
 ```
