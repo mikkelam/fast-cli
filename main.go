@@ -20,8 +20,8 @@ type Speed struct {
 	Unit  string  `json:"unit"`
 }
 type SpeedResults struct {
-	Download Speed `json:"download"`
-	Upload   Speed `json:"upload,omitempty"`
+	Download Speed  `json:"download"`
+	Upload   *Speed `json:"upload"`
 }
 
 var (
@@ -157,7 +157,9 @@ func printFinalSpeeds(downloadSpeed *Speed, uploadSpeed *Speed, checkUpload bool
 	if jsonOutput {
 		results := SpeedResults{
 			Download: *downloadSpeed,
-			Upload:   *uploadSpeed,
+		}
+		if checkUpload {
+			results.Upload = uploadSpeed
 		}
 		utils.PrintJSON("%s\n", toJSON(results))
 	} else {
