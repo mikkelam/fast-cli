@@ -161,7 +161,11 @@ func printFinalSpeeds(downloadSpeed *Speed, uploadSpeed *Speed, checkUpload bool
 		}
 		utils.PrintJSON("%s\n", toJSON(results))
 	} else {
-		utils.Printf("\n🚀 Final estimated speeds:\n")
+		speedsText := "speed"
+		if checkUpload {
+			speedsText = "speeds"
+		}
+		utils.Printf(fmt.Sprintf("\n🚀 Final estimated %s:\n", speedsText))
 		utils.Printf("   Download: %.2f %s\n", downloadSpeed.Speed, downloadSpeed.Unit)
 		if checkUpload && uploadSpeed != nil {
 			utils.Printf("   Upload:    %.2f %s\n", uploadSpeed.Speed, uploadSpeed.Unit)
