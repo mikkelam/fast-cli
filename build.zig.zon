@@ -1,0 +1,25 @@
+.{
+    .name = .fast_cli,
+
+    .version = "0.0.1",
+
+    .fingerprint = 0xfb5a9fbee5075971, // Changing this has security and trust implications.
+
+    .minimum_zig_version = "0.14.0",
+
+    .dependencies = .{
+        .mvzr = .{
+            .url = "https://github.com/mnemnion/mvzr/archive/refs/tags/v0.3.3.tar.gz",
+            .hash = "mvzr-0.3.2-ZSOky95lAQA00lXTN_g8JWoBuh8pw-jyzmCWAqlu1h8L",
+        },
+        .zli = .{
+            .url = "https://github.com/xcaeser/zli/archive/v3.7.0.tar.gz",
+            .hash = "zli-3.7.0-LeUjpq8uAQCl8uh-ws3jdXsnbCwMZQgcZQx4TVXHLSeQ",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

@@ -1,0 +1,71 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-linux
+          - aarch64-linux
+          - x86_64-macos
+          - aarch64-macos
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+
+      - name: Build
+        run: zig build --release=safe -Dtarget=${{ matrix.target }}
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p artifacts
+          tar -czf artifacts/fast-cli-${{ matrix.target }}.tar.gz -C zig-out/bin fast-cli -C ../../ LICENSE
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-cli-${{ matrix.target }}
+          path: artifacts/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+      - run: zig build test
+
+  release:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release/
+          find artifacts/ -name "*.tar.gz" | while read file; do
+            cp "$file" release/
+          done
+          ls -la release/
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
