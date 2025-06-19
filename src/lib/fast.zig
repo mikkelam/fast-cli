@@ -6,11 +6,13 @@ const testing = std.testing;
 const log = std.log.scoped(.fast_api);
 
 const mvzr = @import("mvzr");
+
 const FastError = error{
     HttpRequestFailed,
     ScriptNotFound,
     TokenNotFound,
     JsonParseError,
+    ConnectionTimeout,
 };
 
 const Location = struct {
@@ -159,11 +161,36 @@ pub const Fast = struct {
         _ = allocator;
         var response_body = std.ArrayList(u8).init(self.arena.allocator());
 
-        const response: http.Client.FetchResult = try self.client.fetch(.{
+        const response: http.Client.FetchResult = self.client.fetch(.{
             .method = .GET,
             .location = .{ .url = url },
             .response_storage = .{ .dynamic = &response_body },
-        });
+        }) catch |err| switch (err) {
+            error.NetworkUnreachable, error.ConnectionRefused => {
+                log.err("Failed to reach fast.com servers (network/connection error) for URL: {s}", .{url});
+                return error.ConnectionTimeout;
+            },
+            error.UnknownHostName, error.NameServerFailure, error.TemporaryNameServerFailure, error.HostLacksNetworkAddresses => {
+                log.err("Failed to resolve fast.com hostname (DNS/internet connection issue) for URL: {s}", .{url});
+                return error.ConnectionTimeout;
+            },
+            error.ConnectionTimedOut, error.ConnectionResetByPeer => {
+                log.err("Connection to fast.com servers timed out or was reset for URL: {s}", .{url});
+                return error.ConnectionTimeout;
+            },
+            error.TlsInitializationFailed => {
+                log.err("Failed to establish secure connection to fast.com servers for URL: {s}", .{url});
+                return error.ConnectionTimeout;
+            },
+            error.UnexpectedConnectFailure => {
+                log.err("Unexpected connection failure to fast.com servers for URL: {s}", .{url});
+                return error.ConnectionTimeout;
+            },
+            else => {
+                log.err("Network error: {} for URL: {s}", .{ err, url });
+                return error.ConnectionTimeout;
+            },
+        };
 
         log.debug("HTTP response status: {} for URL: {s}", .{ response.status, url });
 
