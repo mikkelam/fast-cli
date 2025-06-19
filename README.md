@@ -10,7 +10,7 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 
 ## Demo
 
-![Fast-CLI Demo](assets/fast-cli-demo.svg)
+![Fast-CLI Demo](demo/fast-cli-demo.svg)
 
 ## Why fast-cli?
 
