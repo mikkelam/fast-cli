@@ -6,7 +6,7 @@
 
 A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Written in Zig for maximum performance.
 
-⚡ **1.3 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
+⚡ **1.4 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
 
 ## Why fast-cli-zig?
 
