@@ -1,11 +1,11 @@
 const std = @import("std");
 const zli = @import("zli");
 const builtin = @import("builtin");
-const build_options = @import("build_options");
+
 const Fast = @import("../lib/fast.zig").Fast;
 const HTTPSpeedTester = @import("../lib/http_speed_tester_v2.zig").HTTPSpeedTester;
+
 const StabilityCriteria = @import("../lib/http_speed_tester_v2.zig").StabilityCriteria;
-const FastStabilityCriteria = @import("../lib/http_speed_tester_v2.zig").FastStabilityCriteria;
 const SpeedTestResult = @import("../lib/http_speed_tester_v2.zig").SpeedTestResult;
 const BandwidthMeter = @import("../lib/bandwidth.zig");
 const SpeedMeasurement = @import("../lib/bandwidth.zig").SpeedMeasurement;
@@ -58,7 +58,7 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
     const root = try zli.Command.init(allocator, .{
         .name = "fast-cli",
         .description = "Estimate connection speed using fast.com",
-        .version = std.SemanticVersion.parse(build_options.version) catch null,
+        version = null,
     }, run);
 
     try root.addFlag(https_flag);
@@ -120,11 +120,13 @@ fn run(ctx: zli.CommandContext) !void {
     defer speed_tester.deinit();
 
     // Use Fast.com-style stability detection by default
-    const criteria = FastStabilityCriteria{
-        .min_duration_seconds = 7,
-        .max_duration_seconds = @as(u32, @intCast(@min(30, max_duration))),
-        .stability_delta_percent = 5.0,
-        .min_stable_measurements = 6,
+    const criteria = StabilityCriteria{
+        .ramp_up_duration_seconds = 4,
+        .max_duration_seconds = @as(u32, @intCast(@max(25, max_duration))),
+        .measurement_interval_ms = 750,
+        .sliding_window_size = 6,
+        .stability_threshold_cov = 0.15,
+        .stable_checks_required = 2,
     };
 
     const download_result = if (json_output) blk: {

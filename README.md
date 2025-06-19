@@ -6,14 +6,16 @@
 
 A blazingly fast CLI tool for testing internet speed compatible with fast.com (api v2). Written in Zig for maximum performance.
 
-⚡ **1.3 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Real-time progress**
+Uses **Fast.com-style stability detection** by default for accurate results with adaptive stopping.
+
+⚡ **1.3 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
 
 ## Why fast-cli-zig?
 
 - **Tiny binary**: Just 1.4 MiB, no runtime dependencies
 - **Blazing fast**: Concurrent connections with adaptive chunk sizing
 - **Cross-platform**: Single binary for Linux, macOS, Windows
-- **Real-time feedback**: Live speed updates during tests
+- **Smart stopping**: Uses Coefficient of Variation (CoV) algorithm for adaptive test duration
 
 ## Installation
 
@@ -42,37 +44,26 @@ v0.0.1
 Usage: fast-cli [options]
 
 Flags:
-     --stability-max-variance    Maximum variance percentage for stability test [String] (default: "10.0")
- -u, --upload                     Check upload speed as well [Bool] (default: false)
- -d, --duration                   Duration in seconds for each test phase - download, then upload if enabled (duration mode only) [Int] (default: 10)
-     --stability-min-samples     Minimum samples for stability test [Int] (default: 5)
-     --stability-max-duration    Maximum duration in seconds for stability test [Int] (default: 30)
-     --https                     Use https when connecting to fast.com [Bool] (default: true)
- -j, --json                       Output results in JSON format [Bool] (default: false)
- -m, --mode                       Test mode: 'duration' or 'stability' [String] (default: "duration")
- -h, --help                       Shows the help for a command [Bool] (default: false)
+ -u, --upload      Check upload speed as well [Bool] (default: false)
+ -d, --duration    Maximum test duration in seconds (uses Fast.com-style stability detection by default) [Int] (default: 30)
+     --https      Use https when connecting to fast.com [Bool] (default: true)
+ -j, --json        Output results in JSON format [Bool] (default: false)
+ -h, --help        Shows the help for a command [Bool] (default: false)
 
 Use "fast-cli --help" for more information.
 ```
-
-## Performance Comparison
-
-TODO
-
-## Options
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--upload`, `-u` | Test upload speed | `false` |
-| `--duration`, `-d` | Test duration (seconds) | `10` |
-| `--json`, `-j` | JSON output | `false` |
-| `--https` | Use HTTPS | `true` |
 
 ## Example Output
 
 ```console
 $ fast-cli --upload
 🏓 25ms | ⬇️ Download: 113.7 Mbps | ⬆️ Upload: 62.1 Mbps
+
+$ fast-cli -d 15  # Quick test with 15s max duration
+🏓 22ms | ⬇️ Download: 105.0 Mbps
+
+$ fast-cli -j     # JSON output
+{"download_mbps": 131.4, "ping_ms": 20.8}
 ```
 
 ## Development
