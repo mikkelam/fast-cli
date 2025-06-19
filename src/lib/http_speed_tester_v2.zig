@@ -50,32 +50,32 @@ pub const HTTPSpeedTester = struct {
         _ = self;
     }
 
-    // Fast.com-style stability-based download with optional progress callback
-    pub fn measure_download_speed_fast_stability_duration(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
+    // Stability-based download with optional progress callback
+    pub fn measure_download_speed_stability_duration(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
         var strategy = measurement_strategy.createStabilityStrategy(self.allocator, criteria);
         defer strategy.deinit();
-        return self.measureDownloadSpeedWithFastStability(urls, &strategy, ProgressType, progress_callback);
+        return self.measureDownloadSpeedWithStability(urls, &strategy, ProgressType, progress_callback);
     }
 
-    // Fast.com-style stability-based download without progress callback
-    pub fn measure_download_speed_fast_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
-        return self.measure_download_speed_fast_stability_duration(urls, criteria, null, {});
+    // Stability-based download without progress callback
+    pub fn measure_download_speed_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
+        return self.measure_download_speed_stability_duration(urls, criteria, null, {});
     }
 
-    // Fast.com-style stability-based upload with optional progress callback
-    pub fn measure_upload_speed_fast_stability_duration(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
+    // Stability-based upload with optional progress callback
+    pub fn measure_upload_speed_stability_duration(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
         const upload_data = try self.allocator.alloc(u8, 4 * 1024 * 1024);
         defer self.allocator.free(upload_data);
         @memset(upload_data, 'A');
 
         var strategy = measurement_strategy.createStabilityStrategy(self.allocator, criteria);
         defer strategy.deinit();
-        return self.measureUploadSpeedWithFastStability(urls, &strategy, upload_data, ProgressType, progress_callback);
+        return self.measureUploadSpeedWithStability(urls, &strategy, upload_data, ProgressType, progress_callback);
     }
 
-    // Fast.com-style stability-based upload without progress callback
-    pub fn measure_upload_speed_fast_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
-        return self.measure_upload_speed_fast_stability_duration(urls, criteria, null, {});
+    // Stability-based upload without progress callback
+    pub fn measure_upload_speed_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
+        return self.measure_upload_speed_stability_duration(urls, criteria, null, {});
     }
 
     // Convenience helpers for cleaner API usage
@@ -106,14 +106,14 @@ pub const HTTPSpeedTester = struct {
         return self.measure_upload_speed_duration(urls, duration_seconds, null, {});
     }
 
-    /// Fast stability download speed measurement with progress callback (type inferred)
-    pub fn measureDownloadSpeedWithFastStabilityProgress(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, progress_callback: anytype) !SpeedTestResult {
-        return self.measure_download_speed_fast_stability_duration(urls, criteria, @TypeOf(progress_callback), progress_callback);
+    /// Stability-based download speed measurement with progress callback (type inferred)
+    pub fn measureDownloadSpeedWithStabilityProgress(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, progress_callback: anytype) !SpeedTestResult {
+        return self.measure_download_speed_stability_duration(urls, criteria, @TypeOf(progress_callback), progress_callback);
     }
 
-    /// Fast stability upload speed measurement with progress callback (type inferred)
-    pub fn measureUploadSpeedWithFastStabilityProgress(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, progress_callback: anytype) !SpeedTestResult {
-        return self.measure_upload_speed_fast_stability_duration(urls, criteria, @TypeOf(progress_callback), progress_callback);
+    /// Stability-based upload speed measurement with progress callback (type inferred)
+    pub fn measureUploadSpeedWithStabilityProgress(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, progress_callback: anytype) !SpeedTestResult {
+        return self.measure_upload_speed_stability_duration(urls, criteria, @TypeOf(progress_callback), progress_callback);
     }
 
     // Private implementation for duration-based download
@@ -248,8 +248,8 @@ pub const HTTPSpeedTester = struct {
         return SpeedTestResult.fromBytesPerSecond(speed_bytes_per_sec);
     }
 
-    // Private implementation for Fast.com-style stability-based download
-    fn measureDownloadSpeedWithFastStability(
+    // Private implementation for stability-based download
+    fn measureDownloadSpeedWithStability(
         self: *HTTPSpeedTester,
         urls: []const []const u8,
         strategy: *StabilityStrategy,
@@ -320,8 +320,8 @@ pub const HTTPSpeedTester = struct {
         return SpeedTestResult.fromBytesPerSecond(speed_bytes_per_sec);
     }
 
-    // Private implementation for Fast.com-style stability-based upload
-    fn measureUploadSpeedWithFastStability(
+    // Private implementation for stability-based upload
+    fn measureUploadSpeedWithStability(
         self: *HTTPSpeedTester,
         urls: []const []const u8,
         strategy: *StabilityStrategy,

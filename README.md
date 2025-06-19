@@ -4,9 +4,7 @@
 [![CI](https://github.com/mikkelam/fast-cli-zig/actions/workflows/ci.yml/badge.svg)](https://github.com/mikkelam/fast-cli-zig/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A blazingly fast CLI tool for testing internet speed compatible with fast.com (api v2). Written in Zig for maximum performance.
-
-Uses **Fast.com-style stability detection** by default for accurate results with adaptive stopping.
+A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Written in Zig for maximum performance.
 
 ⚡ **1.3 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
 

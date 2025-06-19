@@ -10,7 +10,7 @@ const SpeedTestResult = @import("../lib/http_speed_tester_v2.zig").SpeedTestResu
 const BandwidthMeter = @import("../lib/bandwidth.zig");
 const SpeedMeasurement = @import("../lib/bandwidth.zig").SpeedMeasurement;
 const progress = @import("../lib/progress.zig");
-const HttpLatencyTester = @import("../lib/latency.zig").HttpLatencyTester;
+const HttpLatencyTester = @import("../lib/http_latency_tester.zig").HttpLatencyTester;
 const log = std.log.scoped(.cli);
 
 /// Update spinner text with current speed measurement
@@ -48,7 +48,7 @@ const json_output_flag = zli.Flag{
 
 const max_duration_flag = zli.Flag{
     .name = "duration",
-    .description = "Maximum test duration in seconds (uses Fast.com-style stability detection by default)",
+    .description = "Maximum test duration in seconds (uses CoV stability detection by default)",
     .shortcut = "d",
     .type = .Int,
     .default_value = .{ .Int = 30 },
@@ -131,7 +131,7 @@ fn run(ctx: zli.CommandContext) !void {
 
     const download_result = if (json_output) blk: {
         // JSON mode: clean output only
-        break :blk speed_tester.measure_download_speed_fast_stability(urls, criteria) catch |err| {
+        break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch |err| {
             log.err("Download test failed: {}", .{err});
             std.debug.print("{{\"error\": \"{}\"}}\n", .{err});
             return;
@@ -139,7 +139,7 @@ fn run(ctx: zli.CommandContext) !void {
     } else blk: {
         // Interactive mode with spinner updates
         const progressCallback = progress.createCallback(ctx.spinner, updateSpinnerText);
-        break :blk speed_tester.measureDownloadSpeedWithFastStabilityProgress(urls, criteria, progressCallback) catch |err| {
+        break :blk speed_tester.measureDownloadSpeedWithStabilityProgress(urls, criteria, progressCallback) catch |err| {
             try ctx.spinner.fail("Download test failed: {}", .{err});
             return;
         };
@@ -153,7 +153,7 @@ fn run(ctx: zli.CommandContext) !void {
 
         upload_result = if (json_output) blk: {
             // JSON mode: clean output only
-            break :blk speed_tester.measure_upload_speed_fast_stability(urls, criteria) catch |err| {
+            break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch |err| {
                 log.err("Upload test failed: {}", .{err});
                 std.debug.print("{{\"error\": \"{}\"}}\n", .{err});
                 return;
@@ -161,7 +161,7 @@ fn run(ctx: zli.CommandContext) !void {
         } else blk: {
             // Interactive mode with spinner updates
             const uploadProgressCallback = progress.createCallback(ctx.spinner, updateUploadSpinnerText);
-            break :blk speed_tester.measureUploadSpeedWithFastStabilityProgress(urls, criteria, uploadProgressCallback) catch |err| {
+            break :blk speed_tester.measureUploadSpeedWithStabilityProgress(urls, criteria, uploadProgressCallback) catch |err| {
                 try ctx.spinner.fail("Upload test failed: {}", .{err});
                 return;
             };
