@@ -15,9 +15,9 @@ pub const SpeedTestResult = struct {
     speed: SpeedMeasurement,
 
     /// Convert bytes per second to optimal unit for display (in bits per second)
-    pub fn fromBytesPerSecond(speed_bytes_per_sec: f64) SpeedTestResult {
+    pub fn fromBytesPerSecond(bytes_per_second: f64) SpeedTestResult {
         // Convert bytes/s to bits/s
-        const speed_bits_per_sec = speed_bytes_per_sec * 8.0;
+        const speed_bits_per_sec = bytes_per_second * 8.0;
         const abs_speed = @abs(speed_bits_per_sec);
 
         const speed_measurement = if (abs_speed >= 1_000_000_000)
@@ -50,20 +50,6 @@ pub const HTTPSpeedTester = struct {
         _ = self;
     }
 
-    pub fn set_concurrent_connections(self: *HTTPSpeedTester, count: u32) void {
-        self.concurrent_connections = @min(count, 8); // Max 8 connections
-    }
-
-    pub fn set_progress_update_interval_ms(self: *HTTPSpeedTester, interval_ms: u32) void {
-        self.progress_update_interval_ms = interval_ms;
-    }
-
-    // Clean duration-based download with optional progress callback
-    pub fn measure_download_speed_duration(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
-        const strategy = measurement_strategy.createDurationStrategy(duration_seconds, self.progress_update_interval_ms);
-        return self.measureDownloadSpeedWithDuration(urls, strategy, ProgressType, progress_callback);
-    }
-
     // Fast.com-style stability-based download with optional progress callback
     pub fn measure_download_speed_fast_stability_duration(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
         var strategy = measurement_strategy.createStabilityStrategy(self.allocator, criteria);
@@ -74,16 +60,6 @@ pub const HTTPSpeedTester = struct {
     // Fast.com-style stability-based download without progress callback
     pub fn measure_download_speed_fast_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
         return self.measure_download_speed_fast_stability_duration(urls, criteria, null, {});
-    }
-
-    // Clean duration-based upload with optional progress callback
-    pub fn measure_upload_speed_duration(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
-        const upload_data = try self.allocator.alloc(u8, 4 * 1024 * 1024);
-        defer self.allocator.free(upload_data);
-        @memset(upload_data, 'A');
-
-        const strategy = measurement_strategy.createDurationStrategy(duration_seconds, self.progress_update_interval_ms);
-        return self.measureUploadSpeedWithDuration(urls, strategy, upload_data, ProgressType, progress_callback);
     }
 
     // Fast.com-style stability-based upload with optional progress callback
@@ -104,24 +80,30 @@ pub const HTTPSpeedTester = struct {
 
     // Convenience helpers for cleaner API usage
 
+    // Clean duration-based download with optional progress callback
+    pub fn measure_download_speed_duration(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
+        const strategy = measurement_strategy.createDurationStrategy(duration_seconds, self.progress_update_interval_ms);
+        return self.measureDownloadSpeedWithDuration(urls, strategy, ProgressType, progress_callback);
+    }
+
     /// Simple download speed measurement without progress callback
     pub fn measureDownloadSpeed(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32) !SpeedTestResult {
         return self.measure_download_speed_duration(urls, duration_seconds, null, {});
     }
 
-    /// Download speed measurement with progress callback (type inferred)
-    pub fn measureDownloadSpeedWithProgress(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, progress_callback: anytype) !SpeedTestResult {
-        return self.measure_download_speed_duration(urls, duration_seconds, @TypeOf(progress_callback), progress_callback);
+    // Clean duration-based upload with optional progress callback
+    pub fn measure_upload_speed_duration(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
+        const upload_data = try self.allocator.alloc(u8, 4 * 1024 * 1024);
+        defer self.allocator.free(upload_data);
+        @memset(upload_data, 'A');
+
+        const strategy = measurement_strategy.createDurationStrategy(duration_seconds, self.progress_update_interval_ms);
+        return self.measureUploadSpeedWithDuration(urls, strategy, upload_data, ProgressType, progress_callback);
     }
 
     /// Simple upload speed measurement without progress callback
     pub fn measureUploadSpeed(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32) !SpeedTestResult {
         return self.measure_upload_speed_duration(urls, duration_seconds, null, {});
-    }
-
-    /// Upload speed measurement with progress callback (type inferred)
-    pub fn measureUploadSpeedWithProgress(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, progress_callback: anytype) !SpeedTestResult {
-        return self.measure_upload_speed_duration(urls, duration_seconds, @TypeOf(progress_callback), progress_callback);
     }
 
     /// Fast stability download speed measurement with progress callback (type inferred)

@@ -58,7 +58,7 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
     const root = try zli.Command.init(allocator, .{
         .name = "fast-cli",
         .description = "Estimate connection speed using fast.com",
-        version = null,
+        .version = null,
     }, run);
 
     try root.addFlag(https_flag);
