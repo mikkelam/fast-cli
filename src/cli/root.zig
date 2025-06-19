@@ -1,15 +1,16 @@
 const std = @import("std");
 const zli = @import("zli");
 const builtin = @import("builtin");
-const build_options = @import("build_options");
+
 const Fast = @import("../lib/fast.zig").Fast;
 const HTTPSpeedTester = @import("../lib/http_speed_tester_v2.zig").HTTPSpeedTester;
+
 const StabilityCriteria = @import("../lib/http_speed_tester_v2.zig").StabilityCriteria;
 const SpeedTestResult = @import("../lib/http_speed_tester_v2.zig").SpeedTestResult;
 const BandwidthMeter = @import("../lib/bandwidth.zig");
 const SpeedMeasurement = @import("../lib/bandwidth.zig").SpeedMeasurement;
 const progress = @import("../lib/progress.zig");
-const HttpLatencyTester = @import("../lib/latency.zig").HttpLatencyTester;
+const HttpLatencyTester = @import("../lib/http_latency_tester.zig").HttpLatencyTester;
 const log = std.log.scoped(.cli);
 
 /// Update spinner text with current speed measurement
@@ -45,39 +46,10 @@ const json_output_flag = zli.Flag{
     .default_value = .{ .Bool = false },
 };
 
-const test_mode_flag = zli.Flag{
-    .name = "mode",
-    .description = "Test mode: 'duration' or 'stability'",
-    .shortcut = "m",
-    .type = .String,
-    .default_value = .{ .String = "duration" },
-};
-
-const test_duration_flag = zli.Flag{
+const max_duration_flag = zli.Flag{
     .name = "duration",
-    .description = "Duration in seconds for each test phase - download, then upload if enabled (duration mode only)",
+    .description = "Maximum test duration in seconds (uses CoV stability detection by default)",
     .shortcut = "d",
-    .type = .Int,
-    .default_value = .{ .Int = 5 },
-};
-
-const stability_min_samples_flag = zli.Flag{
-    .name = "stability-min-samples",
-    .description = "Minimum samples for stability test",
-    .type = .Int,
-    .default_value = .{ .Int = 5 },
-};
-
-const stability_max_variance_flag = zli.Flag{
-    .name = "stability-max-variance",
-    .description = "Maximum variance percentage for stability test",
-    .type = .String,
-    .default_value = .{ .String = "10.0" },
-};
-
-const stability_max_duration_flag = zli.Flag{
-    .name = "stability-max-duration",
-    .description = "Maximum duration in seconds for stability test",
     .type = .Int,
     .default_value = .{ .Int = 30 },
 };
@@ -86,17 +58,13 @@ pub fn build(allocator: std.mem.Allocator) !*zli.Command {
     const root = try zli.Command.init(allocator, .{
         .name = "fast-cli",
         .description = "Estimate connection speed using fast.com",
-        .version = std.SemanticVersion.parse(build_options.version) catch null,
+        .version = null,
     }, run);
 
     try root.addFlag(https_flag);
     try root.addFlag(check_upload_flag);
     try root.addFlag(json_output_flag);
-    try root.addFlag(test_mode_flag);
-    try root.addFlag(test_duration_flag);
-    try root.addFlag(stability_min_samples_flag);
-    try root.addFlag(stability_max_variance_flag);
-    try root.addFlag(stability_max_duration_flag);
+    try root.addFlag(max_duration_flag);
 
     return root;
 }
@@ -105,15 +73,10 @@ fn run(ctx: zli.CommandContext) !void {
     const use_https = ctx.flag("https", bool);
     const check_upload = ctx.flag("upload", bool);
     const json_output = ctx.flag("json", bool);
-    const test_mode = ctx.flag("mode", []const u8);
-    const test_duration = ctx.flag("duration", i64);
-    const stability_min_samples = ctx.flag("stability-min-samples", i64);
-    const stability_max_variance_str = ctx.flag("stability-max-variance", []const u8);
-    const stability_max_duration = ctx.flag("stability-max-duration", i64);
+    const max_duration = ctx.flag("duration", i64);
 
-    const stability_max_variance = std.fmt.parseFloat(f64, stability_max_variance_str) catch 10.0;
-    log.info("Config: https={}, upload={}, json={}, mode={s}, duration={}s", .{
-        use_https, check_upload, json_output, test_mode, test_duration,
+    log.info("Config: https={}, upload={}, json={}, max_duration={}s", .{
+        use_https, check_upload, json_output, max_duration,
     });
 
     var fast = Fast.init(std.heap.page_allocator, use_https);
@@ -156,81 +119,52 @@ fn run(ctx: zli.CommandContext) !void {
     var speed_tester = HTTPSpeedTester.init(std.heap.page_allocator);
     defer speed_tester.deinit();
 
-    // Determine test mode
-    const use_stability = std.mem.eql(u8, test_mode, "stability");
+    // Use Fast.com-style stability detection by default
+    const criteria = StabilityCriteria{
+        .ramp_up_duration_seconds = 4,
+        .max_duration_seconds = @as(u32, @intCast(@max(25, max_duration))),
+        .measurement_interval_ms = 750,
+        .sliding_window_size = 6,
+        .stability_threshold_cov = 0.15,
+        .stable_checks_required = 2,
+    };
 
-    // Measure download speed
-
-    const download_result = if (use_stability) blk: {
-        const criteria = StabilityCriteria{
-            .min_samples = @as(u32, @intCast(stability_min_samples)),
-            .max_variance_percent = stability_max_variance,
-            .max_duration_seconds = @as(u32, @intCast(stability_max_duration)),
-        };
+    const download_result = if (json_output) blk: {
+        // JSON mode: clean output only
         break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch |err| {
-            if (!json_output) {
-                try ctx.spinner.fail("Download test failed: {}", .{err});
-            } else {
-                log.err("Download test failed: {}", .{err});
-                std.debug.print("{{\"error\": \"{}\"}}\n", .{err});
-            }
+            log.err("Download test failed: {}", .{err});
+            std.debug.print("{{\"error\": \"{}\"}}\n", .{err});
             return;
         };
     } else blk: {
-        if (json_output) {
-            // JSON mode: clean output only
-            break :blk speed_tester.measureDownloadSpeed(urls, @as(u32, @intCast(@max(0, test_duration)))) catch |err| {
-                log.err("Download test failed: {}", .{err});
-                std.debug.print("{{\"error\": \"{}\"}}\n", .{err});
-                return;
-            };
-        } else {
-            // Create progress callback with spinner context
-            const progressCallback = progress.createCallback(ctx.spinner, updateSpinnerText);
-
-            break :blk speed_tester.measureDownloadSpeedWithProgress(urls, @as(u32, @intCast(@max(0, test_duration))), progressCallback) catch |err| {
-                try ctx.spinner.fail("Download test failed: {}", .{err});
-                return;
-            };
-        }
+        // Interactive mode with spinner updates
+        const progressCallback = progress.createCallback(ctx.spinner, updateSpinnerText);
+        break :blk speed_tester.measureDownloadSpeedWithStabilityProgress(urls, criteria, progressCallback) catch |err| {
+            try ctx.spinner.fail("Download test failed: {}", .{err});
+            return;
+        };
     };
 
     var upload_result: ?SpeedTestResult = null;
     if (check_upload) {
         if (!json_output) {
-            const upload_mode_str = if (use_stability) "stability" else "duration";
-            try ctx.spinner.start(.{}, "Measuring upload speed ({s} mode)...", .{upload_mode_str});
+            try ctx.spinner.start(.{}, "Measuring upload speed...", .{});
         }
 
-        upload_result = if (use_stability) blk: {
-            const criteria = StabilityCriteria{
-                .min_samples = @as(u32, @intCast(stability_min_samples)),
-                .max_variance_percent = stability_max_variance,
-                .max_duration_seconds = @as(u32, @intCast(stability_max_duration)),
-            };
+        upload_result = if (json_output) blk: {
+            // JSON mode: clean output only
             break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch |err| {
-                if (!json_output) {
-                    try ctx.spinner.fail("Upload test failed: {}", .{err});
-                }
+                log.err("Upload test failed: {}", .{err});
+                std.debug.print("{{\"error\": \"{}\"}}\n", .{err});
                 return;
             };
         } else blk: {
-            if (json_output) {
-                // JSON mode: clean output only
-                break :blk speed_tester.measureUploadSpeed(urls, @as(u32, @intCast(@max(0, test_duration)))) catch |err| {
-                    log.err("Upload test failed: {}", .{err});
-                    std.debug.print("{{\"error\": \"{}\"}}\n", .{err});
-                    return;
-                };
-            } else {
-                // Create progress callback with spinner context
-                const uploadProgressCallback = progress.createCallback(ctx.spinner, updateUploadSpinnerText);
-
-                break :blk speed_tester.measureUploadSpeedWithProgress(urls, @as(u32, @intCast(@max(0, test_duration))), uploadProgressCallback) catch |err| {
-                    try ctx.spinner.fail("Upload test failed: {}", .{err});
-                    return;
-                };
-            }
+            // Interactive mode with spinner updates
+            const uploadProgressCallback = progress.createCallback(ctx.spinner, updateUploadSpinnerText);
+            break :blk speed_tester.measureUploadSpeedWithStabilityProgress(urls, criteria, uploadProgressCallback) catch |err| {
+                try ctx.spinner.fail("Upload test failed: {}", .{err});
+                return;
+            };
         };
     }
 

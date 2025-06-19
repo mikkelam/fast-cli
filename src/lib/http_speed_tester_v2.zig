@@ -15,9 +15,9 @@ pub const SpeedTestResult = struct {
     speed: SpeedMeasurement,
 
     /// Convert bytes per second to optimal unit for display (in bits per second)
-    pub fn fromBytesPerSecond(speed_bytes_per_sec: f64) SpeedTestResult {
+    pub fn fromBytesPerSecond(bytes_per_second: f64) SpeedTestResult {
         // Convert bytes/s to bits/s
-        const speed_bits_per_sec = speed_bytes_per_sec * 8.0;
+        const speed_bits_per_sec = bytes_per_second * 8.0;
         const abs_speed = @abs(speed_bits_per_sec);
 
         const speed_measurement = if (abs_speed >= 1_000_000_000)
@@ -50,13 +50,35 @@ pub const HTTPSpeedTester = struct {
         _ = self;
     }
 
-    pub fn set_concurrent_connections(self: *HTTPSpeedTester, count: u32) void {
-        self.concurrent_connections = @min(count, 8); // Max 8 connections
+    // Stability-based download with optional progress callback
+    pub fn measure_download_speed_stability_duration(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
+        var strategy = measurement_strategy.createStabilityStrategy(self.allocator, criteria);
+        defer strategy.deinit();
+        return self.measureDownloadSpeedWithStability(urls, &strategy, ProgressType, progress_callback);
     }
 
-    pub fn set_progress_update_interval_ms(self: *HTTPSpeedTester, interval_ms: u32) void {
-        self.progress_update_interval_ms = interval_ms;
+    // Stability-based download without progress callback
+    pub fn measure_download_speed_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
+        return self.measure_download_speed_stability_duration(urls, criteria, null, {});
     }
+
+    // Stability-based upload with optional progress callback
+    pub fn measure_upload_speed_stability_duration(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
+        const upload_data = try self.allocator.alloc(u8, 4 * 1024 * 1024);
+        defer self.allocator.free(upload_data);
+        @memset(upload_data, 'A');
+
+        var strategy = measurement_strategy.createStabilityStrategy(self.allocator, criteria);
+        defer strategy.deinit();
+        return self.measureUploadSpeedWithStability(urls, &strategy, upload_data, ProgressType, progress_callback);
+    }
+
+    // Stability-based upload without progress callback
+    pub fn measure_upload_speed_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
+        return self.measure_upload_speed_stability_duration(urls, criteria, null, {});
+    }
+
+    // Convenience helpers for cleaner API usage
 
     // Clean duration-based download with optional progress callback
     pub fn measure_download_speed_duration(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, comptime ProgressType: ?type, progress_callback: if (ProgressType) |T| T else void) !SpeedTestResult {
@@ -64,11 +86,9 @@ pub const HTTPSpeedTester = struct {
         return self.measureDownloadSpeedWithDuration(urls, strategy, ProgressType, progress_callback);
     }
 
-    // Clean stability-based download
-    pub fn measure_download_speed_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
-        var strategy = measurement_strategy.createStabilityStrategy(self.allocator, criteria);
-        defer strategy.deinit();
-        return self.measureDownloadSpeedWithStability(urls, &strategy);
+    /// Simple download speed measurement without progress callback
+    pub fn measureDownloadSpeed(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32) !SpeedTestResult {
+        return self.measure_download_speed_duration(urls, duration_seconds, null, {});
     }
 
     // Clean duration-based upload with optional progress callback
@@ -81,37 +101,19 @@ pub const HTTPSpeedTester = struct {
         return self.measureUploadSpeedWithDuration(urls, strategy, upload_data, ProgressType, progress_callback);
     }
 
-    // Clean stability-based upload
-    pub fn measure_upload_speed_stability(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria) !SpeedTestResult {
-        const upload_data = try self.allocator.alloc(u8, 4 * 1024 * 1024);
-        defer self.allocator.free(upload_data);
-        @memset(upload_data, 'A');
-
-        var strategy = measurement_strategy.createStabilityStrategy(self.allocator, criteria);
-        defer strategy.deinit();
-        return self.measureUploadSpeedWithStability(urls, &strategy, upload_data);
-    }
-
-    // Convenience helpers for cleaner API usage
-
-    /// Simple download speed measurement without progress callback
-    pub fn measureDownloadSpeed(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32) !SpeedTestResult {
-        return self.measure_download_speed_duration(urls, duration_seconds, null, {});
-    }
-
-    /// Download speed measurement with progress callback (type inferred)
-    pub fn measureDownloadSpeedWithProgress(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, progress_callback: anytype) !SpeedTestResult {
-        return self.measure_download_speed_duration(urls, duration_seconds, @TypeOf(progress_callback), progress_callback);
-    }
-
     /// Simple upload speed measurement without progress callback
     pub fn measureUploadSpeed(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32) !SpeedTestResult {
         return self.measure_upload_speed_duration(urls, duration_seconds, null, {});
     }
 
-    /// Upload speed measurement with progress callback (type inferred)
-    pub fn measureUploadSpeedWithProgress(self: *HTTPSpeedTester, urls: []const []const u8, duration_seconds: u32, progress_callback: anytype) !SpeedTestResult {
-        return self.measure_upload_speed_duration(urls, duration_seconds, @TypeOf(progress_callback), progress_callback);
+    /// Stability-based download speed measurement with progress callback (type inferred)
+    pub fn measureDownloadSpeedWithStabilityProgress(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, progress_callback: anytype) !SpeedTestResult {
+        return self.measure_download_speed_stability_duration(urls, criteria, @TypeOf(progress_callback), progress_callback);
+    }
+
+    /// Stability-based upload speed measurement with progress callback (type inferred)
+    pub fn measureUploadSpeedWithStabilityProgress(self: *HTTPSpeedTester, urls: []const []const u8, criteria: StabilityCriteria, progress_callback: anytype) !SpeedTestResult {
+        return self.measure_upload_speed_stability_duration(urls, criteria, @TypeOf(progress_callback), progress_callback);
     }
 
     // Private implementation for duration-based download
@@ -160,62 +162,6 @@ pub const HTTPSpeedTester = struct {
                 const measurement = bandwidth_meter.bandwidthWithUnits();
                 progress_callback.call(measurement);
             }
-        }
-
-        // Stop and wait for workers
-        worker_manager.stopAndJoinWorkers();
-
-        // Calculate results
-        const totals = worker_manager.calculateDownloadTotals(workers);
-        if (totals.errors > 0) {
-            print("Download completed with {} errors\n", .{totals.errors});
-        }
-
-        const actual_duration_ns = timer.timer_interface().read();
-        const actual_duration_s = @as(f64, @floatFromInt(actual_duration_ns)) / std.time.ns_per_s;
-
-        if (actual_duration_s == 0) return SpeedTestResult.fromBytesPerSecond(0);
-        const speed_bytes_per_sec = @as(f64, @floatFromInt(totals.bytes)) / actual_duration_s;
-        return SpeedTestResult.fromBytesPerSecond(speed_bytes_per_sec);
-    }
-
-    // Private implementation for stability-based download
-    fn measureDownloadSpeedWithStability(
-        self: *HTTPSpeedTester,
-        urls: []const []const u8,
-        strategy: *StabilityStrategy,
-    ) !SpeedTestResult {
-        var timer = try speed_worker.RealTimer.init();
-        var should_stop = std.atomic.Value(bool).init(false);
-
-        // Setup worker manager
-        const num_workers = @min(urls.len, self.concurrent_connections);
-        var worker_manager = try WorkerManager.init(self.allocator, &should_stop, num_workers);
-        defer worker_manager.deinit();
-
-        // Setup download workers
-        const workers = try worker_manager.setupDownloadWorkers(
-            urls,
-            self.concurrent_connections,
-            timer.timer_interface(),
-            strategy.max_duration_ns,
-        );
-        defer worker_manager.cleanupWorkers(workers);
-
-        // Start workers
-        try worker_manager.startDownloadWorkers(workers);
-
-        // Main measurement loop
-        while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.time.sleep(strategy.getSleepInterval());
-
-            const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
-            const should_stop_early = try strategy.handleProgress(
-                timer.timer_interface().read(),
-                current_bytes,
-            );
-
-            if (should_stop_early) break;
         }
 
         // Stop and wait for workers
@@ -302,15 +248,96 @@ pub const HTTPSpeedTester = struct {
         return SpeedTestResult.fromBytesPerSecond(speed_bytes_per_sec);
     }
 
+    // Private implementation for stability-based download
+    fn measureDownloadSpeedWithStability(
+        self: *HTTPSpeedTester,
+        urls: []const []const u8,
+        strategy: *StabilityStrategy,
+        comptime ProgressType: ?type,
+        progress_callback: if (ProgressType) |T| T else void,
+    ) !SpeedTestResult {
+        const has_progress = ProgressType != null;
+        var timer = try speed_worker.RealTimer.init();
+        var should_stop = std.atomic.Value(bool).init(false);
+
+        // Initialize bandwidth meter for progress tracking
+        var bandwidth_meter = BandwidthMeter.init();
+        if (has_progress) {
+            try bandwidth_meter.start();
+        }
+
+        // Setup worker manager
+        const num_workers = @min(urls.len, self.concurrent_connections);
+        var worker_manager = try WorkerManager.init(self.allocator, &should_stop, num_workers);
+        defer worker_manager.deinit();
+
+        // Setup download workers
+        const workers = try worker_manager.setupDownloadWorkers(
+            urls,
+            self.concurrent_connections,
+            timer.timer_interface(),
+            strategy.max_duration_ns,
+        );
+        defer worker_manager.cleanupWorkers(workers);
+
+        // Start workers
+        try worker_manager.startDownloadWorkers(workers);
+
+        // Main measurement loop
+        while (strategy.shouldContinue(timer.timer_interface().read())) {
+            std.time.sleep(strategy.getSleepInterval());
+
+            const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
+
+            if (has_progress) {
+                bandwidth_meter.update_total(current_bytes);
+                const measurement = bandwidth_meter.bandwidthWithUnits();
+                progress_callback.call(measurement);
+            }
+
+            const should_stop_early = try strategy.handleProgress(
+                timer.timer_interface().read(),
+                current_bytes,
+            );
+
+            if (should_stop_early) break;
+        }
+
+        // Stop and wait for workers
+        worker_manager.stopAndJoinWorkers();
+
+        // Calculate results
+        const totals = worker_manager.calculateDownloadTotals(workers);
+        if (totals.errors > 0) {
+            print("Download completed with {} errors\n", .{totals.errors});
+        }
+
+        const actual_duration_ns = timer.timer_interface().read();
+        const actual_duration_s = @as(f64, @floatFromInt(actual_duration_ns)) / std.time.ns_per_s;
+
+        if (actual_duration_s == 0) return SpeedTestResult.fromBytesPerSecond(0);
+        const speed_bytes_per_sec = @as(f64, @floatFromInt(totals.bytes)) / actual_duration_s;
+        return SpeedTestResult.fromBytesPerSecond(speed_bytes_per_sec);
+    }
+
     // Private implementation for stability-based upload
     fn measureUploadSpeedWithStability(
         self: *HTTPSpeedTester,
         urls: []const []const u8,
         strategy: *StabilityStrategy,
         upload_data: []const u8,
+        comptime ProgressType: ?type,
+        progress_callback: if (ProgressType) |T| T else void,
     ) !SpeedTestResult {
+        const has_progress = ProgressType != null;
         var timer = try speed_worker.RealTimer.init();
         var should_stop = std.atomic.Value(bool).init(false);
+
+        // Initialize bandwidth meter for progress tracking
+        var bandwidth_meter = BandwidthMeter.init();
+        if (has_progress) {
+            try bandwidth_meter.start();
+        }
 
         // Setup worker manager
         const num_workers = @min(urls.len, self.concurrent_connections);
@@ -335,6 +362,13 @@ pub const HTTPSpeedTester = struct {
             std.time.sleep(strategy.getSleepInterval());
 
             const current_bytes = worker_manager.getCurrentUploadBytes(workers);
+
+            if (has_progress) {
+                bandwidth_meter.update_total(current_bytes);
+                const measurement = bandwidth_meter.bandwidthWithUnits();
+                progress_callback.call(measurement);
+            }
+
             const should_stop_early = try strategy.handleProgress(
                 timer.timer_interface().read(),
                 current_bytes,

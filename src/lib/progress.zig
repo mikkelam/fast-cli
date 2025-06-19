@@ -29,8 +29,3 @@ pub fn createCallback(context: anytype, comptime updateFn: anytype) ProgressCall
         .updateFn = wrapper.call,
     };
 }
-
-/// Check if a value is a valid progress callback at comptime
-pub fn isProgressCallback(comptime T: type) bool {
-    return @hasDecl(T, "call") and @hasField(T, "context");
-}

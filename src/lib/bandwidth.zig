@@ -41,11 +41,6 @@ pub const BandwidthMeter = struct {
         self._bytes_transferred = total_bytes;
     }
 
-    pub fn record_bytes(self: *BandwidthMeter, byte_count: usize) void {
-        assert(self._started);
-        self._bytes_transferred += byte_count;
-    }
-
     pub fn bandwidth(self: *BandwidthMeter) f64 {
         if (!self._started) return 0;
 
@@ -97,8 +92,8 @@ test "BandwidthMeter record_bytes" {
     var meter = BandwidthMeter.init();
     try meter.start();
 
-    meter.record_bytes(1000);
-    meter.record_bytes(500);
+    meter.update_total(1000);
+    meter.update_total(1500);
 
     // Just test that bandwidth calculation works
     const bw = meter.bandwidth();
@@ -109,7 +104,7 @@ test "BandwidthMeter bandwidth calculation" {
     var meter = BandwidthMeter.init();
     try meter.start();
 
-    meter.record_bytes(1000); // 1000 bytes
+    meter.update_total(1000); // 1000 bytes
 
     // Sleep briefly to ensure time passes
     std.time.sleep(std.time.ns_per_ms * 10); // 10ms
