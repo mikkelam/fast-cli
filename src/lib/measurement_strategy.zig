@@ -1,5 +1,13 @@
 const std = @import("std");
 
+pub const FastStabilityCriteria = struct {
+    min_duration_seconds: u32 = 7,
+    max_duration_seconds: u32 = 30,
+    stability_delta_percent: f64 = 5.0,
+    min_stable_measurements: u32 = 6,
+};
+
+// Keep old struct for backward compatibility during transition
 pub const StabilityCriteria = struct {
     min_samples: u32,
     max_variance_percent: f64,
@@ -19,6 +27,86 @@ pub const DurationStrategy = struct {
     }
 };
 
+pub const FastStabilityStrategy = struct {
+    criteria: FastStabilityCriteria,
+    min_duration_ns: u64,
+    max_duration_ns: u64,
+    speed_measurements: std.ArrayList(SpeedMeasurement),
+    last_sample_time: u64 = 0,
+    last_total_bytes: u64 = 0,
+
+    const SpeedMeasurement = struct {
+        speed: f64,
+        time: u64,
+    };
+
+    pub fn init(allocator: std.mem.Allocator, criteria: FastStabilityCriteria) FastStabilityStrategy {
+        return FastStabilityStrategy{
+            .criteria = criteria,
+            .min_duration_ns = @as(u64, criteria.min_duration_seconds) * std.time.ns_per_s,
+            .max_duration_ns = @as(u64, criteria.max_duration_seconds) * std.time.ns_per_s,
+            .speed_measurements = std.ArrayList(SpeedMeasurement).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *FastStabilityStrategy) void {
+        self.speed_measurements.deinit();
+    }
+
+    pub fn shouldContinue(self: FastStabilityStrategy, current_time: u64) bool {
+        return current_time < self.max_duration_ns;
+    }
+
+    pub fn getSleepInterval(self: FastStabilityStrategy) u64 {
+        _ = self;
+        return std.time.ns_per_ms * 150; // Fast.com uses 150ms
+    }
+
+    pub fn shouldSample(self: *FastStabilityStrategy, current_time: u64) bool {
+        return current_time - self.last_sample_time >= std.time.ns_per_s;
+    }
+
+    pub fn addSample(self: *FastStabilityStrategy, current_time: u64, current_total_bytes: u64) !bool {
+        // Skip first sample
+        if (self.last_sample_time > 0) {
+            const bytes_diff = current_total_bytes - self.last_total_bytes;
+            const time_diff_s = @as(f64, @floatFromInt(current_time - self.last_sample_time)) / std.time.ns_per_s;
+            const current_speed = @as(f64, @floatFromInt(bytes_diff)) / time_diff_s;
+
+            try self.speed_measurements.append(SpeedMeasurement{
+                .speed = current_speed,
+                .time = current_time,
+            });
+
+            // Apply Fast.com stability logic
+            if (current_time >= self.min_duration_ns) {
+                if (self.speed_measurements.items.len >= self.criteria.min_stable_measurements) {
+                    if (isFastStable(
+                        self.speed_measurements.items,
+                        current_speed,
+                        self.criteria.stability_delta_percent,
+                        self.criteria.min_stable_measurements,
+                    )) {
+                        return true; // Stable, can stop
+                    }
+                }
+            }
+        }
+
+        self.last_sample_time = current_time;
+        self.last_total_bytes = current_total_bytes;
+        return false; // Not stable yet
+    }
+
+    pub fn handleProgress(self: *FastStabilityStrategy, current_time: u64, current_bytes: u64) !bool {
+        if (self.shouldSample(current_time)) {
+            return try self.addSample(current_time, current_bytes);
+        }
+        return false;
+    }
+};
+
+// Keep old strategy for backward compatibility
 pub const StabilityStrategy = struct {
     criteria: StabilityCriteria,
     max_duration_ns: u64,
@@ -81,6 +169,39 @@ pub const StabilityStrategy = struct {
     }
 };
 
+/// Simplified stability detection using recent measurements
+fn isFastStable(
+    measurements: []const FastStabilityStrategy.SpeedMeasurement,
+    current_speed: f64,
+    stability_delta_percent: f64,
+    min_stable_measurements: u32,
+) bool {
+    if (measurements.len < min_stable_measurements) return false;
+    if (current_speed == 0) return false;
+
+    // Check if recent measurements are within delta threshold
+    const window_size = @min(measurements.len, min_stable_measurements);
+    const recent_start = measurements.len - window_size;
+
+    // Calculate average of recent measurements
+    var speed_sum: f64 = 0;
+    for (measurements[recent_start..]) |measurement| {
+        speed_sum += measurement.speed;
+    }
+    const avg_speed = speed_sum / @as(f64, @floatFromInt(window_size));
+
+    // Check if all recent measurements are within threshold of average
+    for (measurements[recent_start..]) |measurement| {
+        const deviation_percent = @abs(measurement.speed - avg_speed) / avg_speed * 100.0;
+        if (deviation_percent > stability_delta_percent) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// Legacy variance-based stability detection (for backward compatibility)
 fn isStable(samples: []const f64, max_variance_percent: f64) bool {
     if (samples.len < 2) return false;
 
@@ -114,6 +235,10 @@ pub fn createDurationStrategy(duration_seconds: u32, progress_update_interval_ms
         .target_duration_ns = @as(u64, duration_seconds) * std.time.ns_per_s,
         .progress_update_interval_ms = progress_update_interval_ms,
     };
+}
+
+pub fn createFastStabilityStrategy(allocator: std.mem.Allocator, criteria: FastStabilityCriteria) FastStabilityStrategy {
+    return FastStabilityStrategy.init(allocator, criteria);
 }
 
 pub fn createStabilityStrategy(allocator: std.mem.Allocator, criteria: StabilityCriteria) StabilityStrategy {
