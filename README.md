@@ -1,14 +1,14 @@
-# fast-cli-zig
+# fast-cli
 
 [![Zig](https://img.shields.io/badge/Zig-0.14.0+-orange.svg)](https://ziglang.org/)
-[![CI](https://github.com/mikkelam/fast-cli-zig/actions/workflows/ci.yml/badge.svg)](https://github.com/mikkelam/fast-cli-zig/actions/workflows/ci.yml)
+[![CI](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Written in Zig for maximum performance.
 
 ⚡ **1.4 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
 
-## Why fast-cli-zig?
+## Why fast-cli?
 
 - **Tiny binary**: Just 1.4 MiB, no runtime dependencies
 - **Blazing fast**: Concurrent connections with adaptive chunk sizing
@@ -20,7 +20,7 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 ### Pre-built Binaries
 For example, on an Apple Silicon Mac:
 ```bash
-curl -L https://github.com/mikkelam/fast-cli-zig/releases/latest/download/fast-cli-aarch64-macos.tar.gz -o fast-cli.tar.gz
+curl -L https://github.com/mikkelam/fast-cli/releases/latest/download/fast-cli-aarch64-macos.tar.gz -o fast-cli.tar.gz
 tar -xzf fast-cli.tar.gz
 chmod +x fast-cli && sudo mv fast-cli /usr/local/bin/
 fast-cli --help
@@ -28,8 +28,8 @@ fast-cli --help
 
 ### Build from Source
 ```bash
-git clone https://github.com/mikkelam/fast-cli-zig.git
-cd fast-cli-zig
+git clone https://github.com/mikkelam/fast-cli.git
+cd fast-cli
 zig build --release=safe
 ```
 
