@@ -156,7 +156,7 @@ pub const HTTPSpeedTester = struct {
 
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
-                bandwidth_meter.bytes_transferred = current_bytes;
+                bandwidth_meter.update_total(current_bytes);
                 const measurement = bandwidth_meter.bandwidthWithUnits();
                 progress_callback.call(measurement);
             }
@@ -279,7 +279,7 @@ pub const HTTPSpeedTester = struct {
 
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentUploadBytes(workers);
-                bandwidth_meter.bytes_transferred = current_bytes;
+                bandwidth_meter.update_total(current_bytes);
                 const measurement = bandwidth_meter.bandwidthWithUnits();
                 progress_callback.call(measurement);
             }
