@@ -8,6 +8,10 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 
 ⚡ **1.4 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
 
+## Demo
+
+![Fast-CLI Demo](assets/fast-cli-demo.svg)
+
 ## Why fast-cli?
 
 - **Tiny binary**: Just 1.4 MiB, no runtime dependencies
