@@ -14,7 +14,7 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 
 ## Why fast-cli?
 
-- **Tiny binary**: Just 1.4 MiB, no runtime dependencies
+- **Tiny binary**: Just 1.2 MiB, no runtime dependencies
 - **Blazing fast**: Concurrent connections with adaptive chunk sizing
 - **Cross-platform**: Single binary for Linux, macOS, Windows
 - **Smart stopping**: Uses Coefficient of Variation (CoV) algorithm for adaptive test duration
