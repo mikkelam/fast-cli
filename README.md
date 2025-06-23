@@ -45,7 +45,7 @@ fast-cli --help
 ```bash
 git clone https://github.com/mikkelam/fast-cli.git
 cd fast-cli
-zig build --release=safe
+zig build -Doptimize=ReleaseSafe
 ```
 
 ## Usage
