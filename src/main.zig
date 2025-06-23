@@ -10,7 +10,7 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+    const allocator = std.heap.smp_allocator;
     var root = try cli.build(allocator);
     defer root.deinit();
 

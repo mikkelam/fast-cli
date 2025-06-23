@@ -69,7 +69,7 @@ fn run(ctx: zli.CommandContext) !void {
         use_https, check_upload, json_output, max_duration,
     });
 
-    var fast = Fast.init(std.heap.page_allocator, use_https);
+    var fast = Fast.init(std.heap.smp_allocator, use_https);
     defer fast.deinit();
 
     const urls = fast.get_urls(5) catch |err| {
@@ -91,7 +91,7 @@ fn run(ctx: zli.CommandContext) !void {
     }
 
     // Measure latency first
-    var latency_tester = HttpLatencyTester.init(std.heap.page_allocator);
+    var latency_tester = HttpLatencyTester.init(std.heap.smp_allocator);
     defer latency_tester.deinit();
 
     const latency_ms = if (!json_output) blk: {
@@ -110,7 +110,7 @@ fn run(ctx: zli.CommandContext) !void {
     }
 
     // Initialize speed tester
-    var speed_tester = HTTPSpeedTester.init(std.heap.page_allocator);
+    var speed_tester = HTTPSpeedTester.init(std.heap.smp_allocator);
     defer speed_tester.deinit();
 
     // Use Fast.com-style stability detection by default
