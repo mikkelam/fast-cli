@@ -16,10 +16,21 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 
 - **Tiny binary**: Just 1.2 MiB, no runtime dependencies
 - **Blazing fast**: Concurrent connections with adaptive chunk sizing
-- **Cross-platform**: Single binary for Linux, macOS, Windows
+- **Cross-platform**: Single binary for Linux, macOS
 - **Smart stopping**: Uses Coefficient of Variation (CoV) algorithm for adaptive test duration
 
+## Supported Platforms
+
+- **Linux**: x86_64, aarch64 (ARM64)
+- **macOS**: x86_64 (Intel), aarch64 (aka Apple Silicon)
+
 ## Installation
+
+### Quick Install
+
+```bash
+curl -sSL https://raw.githubusercontent.com/mikkelam/fast-cli/main/install.sh | bash
+```
 
 ### Pre-built Binaries
 For example, on an Apple Silicon Mac:
