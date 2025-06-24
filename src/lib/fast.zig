@@ -15,22 +15,19 @@ const FastError = error{
     ConnectionTimeout,
 };
 
-const Location = struct {
-    city: []const u8,
-    country: []const u8,
-};
+const Location = struct { city: []const u8, country: []const u8 };
 
 const Client = struct {
     ip: []const u8,
-    asn: []const u8,
-    isp: []const u8,
-    location: Location,
+    asn: ?[]const u8 = null,
+    isp: ?[]const u8 = null,
+    location: ?Location = null,
 };
 
 const Target = struct {
     name: []const u8,
     url: []const u8,
-    location: Location,
+    location: ?Location = null,
 };
 
 const FastResponse = struct {
@@ -270,4 +267,40 @@ test "extract_token" {
     const token = try Fast.extract_token(script_content, allocator);
     defer allocator.free(token);
     try testing.expect(std.mem.eql(u8, token, "abcdef123456"));
+}
+
+test "parse_response_without_isp" {
+    const response =
+        \\{"client":{"ip":"87.52.107.67","asn":"3292","location":{"city":"Test","country":"DK"}},"targets":[{"name":"https://example.com/0","url":"https://example.com/0","location":{"city":"Test","country":"DK"}}]}
+    ;
+    const allocator = testing.allocator;
+
+    const urls = try Fast.parse_response_urls(response, allocator);
+    defer {
+        for (urls.items) |url| {
+            allocator.free(url);
+        }
+        urls.deinit();
+    }
+
+    try testing.expect(urls.items.len == 1);
+    try testing.expect(std.mem.eql(u8, urls.items[0], "https://example.com/0"));
+}
+
+test "parse_response_minimal_client" {
+    const response =
+        \\{"client":{"ip":"87.52.107.67"},"targets":[{"name":"https://example.com/0","url":"https://example.com/0"}]}
+    ;
+    const allocator = testing.allocator;
+
+    const urls = try Fast.parse_response_urls(response, allocator);
+    defer {
+        for (urls.items) |url| {
+            allocator.free(url);
+        }
+        urls.deinit();
+    }
+
+    try testing.expect(urls.items.len == 1);
+    try testing.expect(std.mem.eql(u8, urls.items[0], "https://example.com/0"));
 }
