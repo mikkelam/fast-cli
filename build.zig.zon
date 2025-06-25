@@ -1,7 +1,7 @@
 .{
     .name = .fast_cli,
 
-    .version = "0.2.3",
+    .version = "0.2.4",
 
     .fingerprint = 0xfb5a9fbee5075971, // Changing this has security and trust implications.
 
