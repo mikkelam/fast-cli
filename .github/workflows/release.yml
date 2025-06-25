@@ -21,7 +21,7 @@ jobs:
       - uses: mlugg/setup-zig@v2
 
       - name: Build
-        run: zig build --release=safe -Dtarget=${{ matrix.target }}
+        run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }} -Dcpu=baseline
 
       - name: Prepare artifact
         run: |

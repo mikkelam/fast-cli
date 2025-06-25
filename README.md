@@ -6,7 +6,7 @@
 
 A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Written in Zig for maximum performance.
 
-⚡ **1.4 MiB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
+⚡ **1.2 MB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
 
 ## Demo
 
@@ -14,7 +14,7 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 
 ## Why fast-cli?
 
-- **Tiny binary**: Just 1.2 MiB, no runtime dependencies
+- **Tiny binary**: Just 1.2 MB, no runtime dependencies
 - **Blazing fast**: Concurrent connections with adaptive chunk sizing
 - **Cross-platform**: Single binary for Linux, macOS
 - **Smart stopping**: Uses Coefficient of Variation (CoV) algorithm for adaptive test duration
@@ -89,7 +89,8 @@ zig build
 zig build test
 
 # Release build
-zig build --release=safe
+# Consider removing -Dcpu if you do not need a portable build
+zig build -Doptimize=ReleaseFast -Dcpu=baseline
 ```
 
 ## License
