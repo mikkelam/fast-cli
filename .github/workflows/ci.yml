@@ -22,7 +22,7 @@ jobs:
     needs: test
     strategy:
       matrix:
-        target: [x86_64-linux, x86_64-macos, aarch64-linux]
+        target: [x86_64-linux, aarch64-macos, aarch64-linux, x86_64-windows]
         optimize: [Debug, ReleaseSafe]
 
     steps:
