@@ -67,7 +67,7 @@ fn run(ctx: zli.CommandContext) !void {
 
     const spinner = ctx.spinner;
 
-    try spinner.print("Config: https={}, upload={}, json={}, max_duration={}s", .{
+    try spinner.print("Config: https={}, upload={}, json={}, max_duration={}s\n", .{
         use_https, check_upload, json_output, max_duration,
     });
 
@@ -87,9 +87,9 @@ fn run(ctx: zli.CommandContext) !void {
         return;
     };
 
-    try spinner.print("Got {} URLs", .{urls.len});
+    try spinner.print("Got {} URLs\n", .{urls.len});
     for (urls) |url| {
-        try spinner.print("URL: {s}", .{url});
+        try spinner.print("URL: {s}\n", .{url});
     }
 
     // Measure latency first
