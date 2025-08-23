@@ -21,13 +21,13 @@ pub const HttpLatencyTester = struct {
     pub fn measureLatency(self: *Self, urls: []const []const u8) !?f64 {
         if (urls.len == 0) return null;
 
-        var latencies = std.ArrayList(f64).init(self.allocator);
-        defer latencies.deinit();
+        var latencies = std.ArrayList(f64).empty;
+        defer latencies.deinit(self.allocator);
 
         // Test each URL
         for (urls) |url| {
             if (self.measureSingleUrl(url)) |latency_ms| {
-                try latencies.append(latency_ms);
+                try latencies.append(self.allocator, latency_ms);
             } else |_| {
                 // Ignore errors, continue with other URLs
                 continue;
@@ -54,14 +54,10 @@ pub const HttpLatencyTester = struct {
             const server_header_buffer = try self.allocator.alloc(u8, 4096);
             defer self.allocator.free(server_header_buffer);
 
-            var req = try client.open(.HEAD, uri, .{
-                .server_header_buffer = server_header_buffer,
-            });
+            var req = try client.request(.HEAD, uri, .{});
             defer req.deinit();
 
-            try req.send();
-            try req.finish();
-            try req.wait();
+            try req.sendBodiless();
         }
 
         // Second request: Reuse connection and measure pure HTTP RTT
@@ -71,14 +67,10 @@ pub const HttpLatencyTester = struct {
             const server_header_buffer = try self.allocator.alloc(u8, 4096);
             defer self.allocator.free(server_header_buffer);
 
-            var req = try client.open(.HEAD, uri, .{
-                .server_header_buffer = server_header_buffer,
-            });
+            var req = try client.request(.HEAD, uri, .{});
             defer req.deinit();
 
-            try req.send();
-            try req.finish();
-            try req.wait();
+            try req.sendBodiless();
         }
 
         const end_time = std.time.nanoTimestamp();

@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const cli = @import("cli/root.zig");
 
 pub const std_options: std.Options = .{
@@ -11,8 +12,14 @@ pub const std_options: std.Options = .{
 
 pub fn main() !void {
     const allocator = std.heap.smp_allocator;
-    var root = try cli.build(allocator);
+
+    const file = std.fs.File.stdout();
+    var writer = file.writerStreaming(&.{}).interface;
+
+    const root = try cli.build(&writer, allocator);
     defer root.deinit();
 
     try root.execute(.{});
+
+    try writer.flush();
 }

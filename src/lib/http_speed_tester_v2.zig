@@ -154,7 +154,7 @@ pub const HTTPSpeedTester = struct {
 
         // Main measurement loop
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.time.sleep(strategy.getSleepInterval());
+            std.Thread.sleep(strategy.getSleepInterval());
 
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
@@ -221,7 +221,7 @@ pub const HTTPSpeedTester = struct {
 
         // Main measurement loop
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.time.sleep(strategy.getSleepInterval());
+            std.Thread.sleep(strategy.getSleepInterval());
 
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentUploadBytes(workers);
@@ -285,7 +285,7 @@ pub const HTTPSpeedTester = struct {
 
         // Main measurement loop
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.time.sleep(strategy.getSleepInterval());
+            std.Thread.sleep(strategy.getSleepInterval());
 
             const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
 
@@ -359,7 +359,7 @@ pub const HTTPSpeedTester = struct {
 
         // Main measurement loop
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.time.sleep(strategy.getSleepInterval());
+            std.Thread.sleep(strategy.getSleepInterval());
 
             const current_bytes = worker_manager.getCurrentUploadBytes(workers);
 

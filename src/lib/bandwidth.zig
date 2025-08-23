@@ -107,7 +107,7 @@ test "BandwidthMeter bandwidth calculation" {
     meter.update_total(1000); // 1000 bytes
 
     // Sleep briefly to ensure time passes
-    std.time.sleep(std.time.ns_per_ms * 10); // 10ms
+    std.Thread.sleep(std.time.ns_per_ms * 10); // 10ms
 
     const bw = meter.bandwidth();
     try testing.expect(bw > 0);
@@ -127,7 +127,7 @@ test "BandwidthMeter unit conversion" {
     // Test different speed ranges
     meter._bytes_transferred = 1000;
     meter._timer = try std.time.Timer.start();
-    std.time.sleep(std.time.ns_per_s); // 1 second
+    std.Thread.sleep(std.time.ns_per_s); // 1 second
 
     const measurement = meter.bandwidthWithUnits();
 

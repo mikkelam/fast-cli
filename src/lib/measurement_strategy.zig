@@ -31,6 +31,7 @@ pub const StabilityStrategy = struct {
     last_sample_time: u64 = 0,
     last_total_bytes: u64 = 0,
     consecutive_stable_checks: u32 = 0,
+    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, criteria: StabilityCriteria) StabilityStrategy {
         return StabilityStrategy{
@@ -38,12 +39,13 @@ pub const StabilityStrategy = struct {
             .ramp_up_duration_ns = @as(u64, criteria.ramp_up_duration_seconds) * std.time.ns_per_s,
             .max_duration_ns = @as(u64, criteria.max_duration_seconds) * std.time.ns_per_s,
             .measurement_interval_ns = criteria.measurement_interval_ms * std.time.ns_per_ms,
-            .speed_measurements = std.ArrayList(f64).init(allocator),
+            .speed_measurements = std.ArrayList(f64).empty,
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *StabilityStrategy) void {
-        self.speed_measurements.deinit();
+        self.speed_measurements.deinit(self.allocator);
     }
 
     pub fn shouldContinue(self: StabilityStrategy, current_time: u64) bool {
@@ -69,7 +71,7 @@ pub const StabilityStrategy = struct {
 
             // Phase 1: Ramp-up - collect measurements but don't check stability
             if (current_time < self.ramp_up_duration_ns) {
-                try self.speed_measurements.append(interval_speed);
+                try self.speed_measurements.append(self.allocator, interval_speed);
 
                 // Keep sliding window size
                 if (self.speed_measurements.items.len > self.criteria.sliding_window_size) {
@@ -77,7 +79,7 @@ pub const StabilityStrategy = struct {
                 }
             } else {
                 // Phase 2: Stabilization - check CoV for stability
-                try self.speed_measurements.append(interval_speed);
+                try self.speed_measurements.append(self.allocator, interval_speed);
 
                 // Maintain sliding window
                 if (self.speed_measurements.items.len > self.criteria.sliding_window_size) {

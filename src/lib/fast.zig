@@ -71,7 +71,7 @@ pub const Fast = struct {
 
         var result = try Fast.parse_response_urls(json_data.items, allocator);
 
-        return result.toOwnedSlice();
+        return result.toOwnedSlice(allocator);
     }
 
     /// Sanitizes JSON data by replacing invalid UTF-8 bytes that cause parseFromSlice to fail.
@@ -102,7 +102,7 @@ pub const Fast = struct {
     }
 
     fn parse_response_urls(json_data: []const u8, result_allocator: std.mem.Allocator) !std.ArrayList([]const u8) {
-        var result = std.ArrayList([]const u8).init(result_allocator);
+        var result = std.ArrayList([]const u8).empty;
 
         const sanitized_json = try sanitize_json(json_data, result_allocator);
         defer result_allocator.free(sanitized_json);
@@ -119,7 +119,7 @@ pub const Fast = struct {
 
         for (response.targets) |target| {
             const url_copy = try result_allocator.dupe(u8, target.url);
-            try result.append(url_copy);
+            try result.append(result_allocator, url_copy);
         }
 
         return result;
@@ -155,13 +155,13 @@ pub const Fast = struct {
     }
 
     fn get_page(self: *Fast, allocator: std.mem.Allocator, url: []const u8) !std.ArrayList(u8) {
-        _ = allocator;
-        var response_body = std.ArrayList(u8).init(self.arena.allocator());
+        var response_body = std.Io.Writer.Allocating.init(allocator);
 
         const response: http.Client.FetchResult = self.client.fetch(.{
             .method = .GET,
             .location = .{ .url = url },
-            .response_storage = .{ .dynamic = &response_body },
+            .response_writer = &response_body.writer,
+            // .response_storage = .{ .dynamic = &response_body },
         }) catch |err| switch (err) {
             error.NetworkUnreachable, error.ConnectionRefused => {
                 log.err("Failed to reach fast.com servers (network/connection error) for URL: {s}", .{url});
@@ -195,7 +195,7 @@ pub const Fast = struct {
             log.err("HTTP request failed with status code {}", .{response.status});
             return error.HttpRequestFailed;
         }
-        return response_body;
+        return response_body.toArrayList();
     }
 };
 
@@ -210,7 +210,7 @@ test "parse_response_urls_v2" {
         for (urls.items) |url| {
             allocator.free(url);
         }
-        urls.deinit();
+        urls.deinit(allocator);
     }
 
     try testing.expect(urls.items.len == 2);
@@ -280,7 +280,7 @@ test "parse_response_without_isp" {
         for (urls.items) |url| {
             allocator.free(url);
         }
-        urls.deinit();
+        urls.deinit(allocator);
     }
 
     try testing.expect(urls.items.len == 1);
@@ -298,7 +298,7 @@ test "parse_response_minimal_client" {
         for (urls.items) |url| {
             allocator.free(url);
         }
-        urls.deinit();
+        urls.deinit(allocator);
     }
 
     try testing.expect(urls.items.len == 1);
