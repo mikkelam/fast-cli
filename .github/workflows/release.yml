@@ -19,6 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
 
       - name: Build
         run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }} -Dcpu=baseline
@@ -39,6 +41,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
       - run: zig build test
 
   release:
