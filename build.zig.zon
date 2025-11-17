@@ -3,18 +3,18 @@
 
     .version = "0.2.4",
 
-    .fingerprint = 0xfb5a9fbee5075971, // Changing this has security and trust implications.
+    .fingerprint = 0xfb5a9fbee5075971,
 
     .minimum_zig_version = "0.15.1",
 
     .dependencies = .{
-        .mvzr = .{
-            .url = "https://github.com/mnemnion/mvzr/archive/refs/tags/v0.3.3.tar.gz",
-            .hash = "mvzr-0.3.2-ZSOky95lAQA00lXTN_g8JWoBuh8pw-jyzmCWAqlu1h8L",
-        },
         .zli = .{
-            .url = "https://github.com/xcaeser/zli/archive/v4.1.0.tar.gz",
-            .hash = "zli-4.1.0-LeUjplXaAAB2lg0IQPEC9VrTlWThzPfrxXvoJNhGMJl9",
+            .url = "https://github.com/xcaeser/zli/archive/v4.1.1.tar.gz",
+            .hash = "zli-4.1.1-LeUjpljfAAAak_E3L4NPowuzPs_FUF9-jYyxuTSNSthM",
+        },
+        .mvzr = .{
+            .url = "https://github.com/mnemnion/mvzr/archive/refs/tags/v0.3.7.tar.gz",
+            .hash = "mvzr-0.3.7-ZSOky5FtAQB2VrFQPNbXHQCFJxWTMAYEK7ljYEaMR6jt",
         },
     },
     .paths = .{
