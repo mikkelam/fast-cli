@@ -169,7 +169,7 @@ pub const DownloadWorker = struct {
                     _ = self.error_count.fetchAdd(1, .monotonic);
                     break;
                 }
-                std.time.sleep(std.time.ns_per_ms * 100);
+                std.Thread.sleep(std.time.ns_per_ms * 100);
                 continue;
             };
             defer response.deinit();
@@ -183,7 +183,7 @@ pub const DownloadWorker = struct {
             // Accept both 200 (full content) and 206 (partial content)
             if (response.status != .ok and response.status != .partial_content) {
                 print("Worker {} HTTP error: {}\n", .{ self.config.worker_id, response.status });
-                std.time.sleep(std.time.ns_per_ms * 100);
+                std.Thread.sleep(std.time.ns_per_ms * 100);
                 continue;
             }
 
@@ -196,7 +196,7 @@ pub const DownloadWorker = struct {
 
             // Small delay between requests
             if (self.config.delay_between_requests_ms > 0) {
-                std.time.sleep(std.time.ns_per_ms * self.config.delay_between_requests_ms);
+                std.Thread.sleep(std.time.ns_per_ms * self.config.delay_between_requests_ms);
             }
         }
     }
@@ -318,7 +318,7 @@ pub const UploadWorker = struct {
                     _ = self.error_count.fetchAdd(1, .monotonic);
                     break;
                 }
-                std.time.sleep(std.time.ns_per_ms * 100);
+                std.Thread.sleep(std.time.ns_per_ms * 100);
                 continue;
             };
             defer response.deinit();
@@ -331,7 +331,7 @@ pub const UploadWorker = struct {
 
             if (response.status != .ok) {
                 print("Upload worker {} HTTP error: {}\n", .{ self.config.worker_id, response.status });
-                std.time.sleep(std.time.ns_per_ms * 100);
+                std.Thread.sleep(std.time.ns_per_ms * 100);
                 continue;
             }
 
@@ -404,15 +404,14 @@ pub const RealHttpClient = struct {
     fn fetch(ptr: *anyopaque, request: FetchRequest) !FetchResponse {
         const self: *Self = @ptrCast(@alignCast(ptr));
 
-        var response_body = std.ArrayList(u8).init(self.allocator);
+        var response_body = std.Io.Writer.Allocating.init(self.allocator);
         errdefer response_body.deinit();
 
         const fetch_options = http.Client.FetchOptions{
             .method = request.method,
             .location = .{ .url = request.url },
             .payload = if (request.payload) |p| p else null,
-            .response_storage = .{ .dynamic = &response_body },
-            .max_append_size = request.max_response_size,
+            .response_writer = &response_body.writer,
         };
 
         const result = try self.client.fetch(fetch_options);
@@ -505,7 +504,7 @@ pub const MockHttpClient = struct {
         _ = request;
 
         if (self.delay_ms > 0) {
-            std.time.sleep(std.time.ns_per_ms * self.delay_ms);
+            std.Thread.sleep(std.time.ns_per_ms * self.delay_ms);
         }
 
         if (self.should_fail) {
@@ -611,7 +610,7 @@ test "DownloadWorker basic functionality" {
     const thread = try std.Thread.spawn(.{}, DownloadWorker.run, .{&worker});
 
     // Let it run for a bit
-    std.time.sleep(std.time.ns_per_ms * 100);
+    std.Thread.sleep(std.time.ns_per_ms * 100);
 
     // Advance timer to trigger stop
     mock_timer.setTime(std.time.ns_per_s * 3); // 3 seconds

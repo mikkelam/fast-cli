@@ -5,7 +5,7 @@
 
     .fingerprint = 0xfb5a9fbee5075971, // Changing this has security and trust implications.
 
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.1",
 
     .dependencies = .{
         .mvzr = .{
@@ -13,8 +13,8 @@
             .hash = "mvzr-0.3.2-ZSOky95lAQA00lXTN_g8JWoBuh8pw-jyzmCWAqlu1h8L",
         },
         .zli = .{
-            .url = "https://github.com/xcaeser/zli/archive/v3.7.0.tar.gz",
-            .hash = "zli-3.7.0-LeUjpq8uAQCl8uh-ws3jdXsnbCwMZQgcZQx4TVXHLSeQ",
+            .url = "https://github.com/xcaeser/zli/archive/v4.1.0.tar.gz",
+            .hash = "zli-4.1.0-LeUjplXaAAB2lg0IQPEC9VrTlWThzPfrxXvoJNhGMJl9",
         },
     },
     .paths = .{

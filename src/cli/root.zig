@@ -1,6 +1,7 @@
 const std = @import("std");
 const zli = @import("zli");
 const builtin = @import("builtin");
+const Writer = std.Io.Writer;
 
 const Fast = @import("../lib/fast.zig").Fast;
 const HTTPSpeedTester = @import("../lib/http_speed_tester_v2.zig").HTTPSpeedTester;
@@ -11,7 +12,6 @@ const BandwidthMeter = @import("../lib/bandwidth.zig");
 const SpeedMeasurement = @import("../lib/bandwidth.zig").SpeedMeasurement;
 const progress = @import("../lib/progress.zig");
 const HttpLatencyTester = @import("../lib/http_latency_tester.zig").HttpLatencyTester;
-const log = std.log.scoped(.cli);
 
 const https_flag = zli.Flag{
     .name = "https",
@@ -44,8 +44,8 @@ const max_duration_flag = zli.Flag{
     .default_value = .{ .Int = 30 },
 };
 
-pub fn build(allocator: std.mem.Allocator) !*zli.Command {
-    const root = try zli.Command.init(allocator, .{
+pub fn build(writer: *Writer, allocator: std.mem.Allocator) !*zli.Command {
+    const root = try zli.Command.init(writer, allocator, .{
         .name = "fast-cli",
         .description = "Estimate connection speed using fast.com",
         .version = null,
@@ -65,7 +65,9 @@ fn run(ctx: zli.CommandContext) !void {
     const json_output = ctx.flag("json", bool);
     const max_duration = ctx.flag("duration", i64);
 
-    log.info("Config: https={}, upload={}, json={}, max_duration={}s", .{
+    const spinner = ctx.spinner;
+
+    try spinner.print("Config: https={}, upload={}, json={}, max_duration={}s\n", .{
         use_https, check_upload, json_output, max_duration,
     });
 
@@ -74,20 +76,20 @@ fn run(ctx: zli.CommandContext) !void {
 
     const urls = fast.get_urls(5) catch |err| {
         if (!json_output) {
-            try ctx.spinner.fail("Failed to get URLs: {}", .{err});
+            try spinner.fail("Failed to get URLs: {}", .{err});
         } else {
             const error_msg = switch (err) {
                 error.ConnectionTimeout => "Failed to contact fast.com servers",
                 else => "Failed to get URLs",
             };
-            try outputJson(null, null, null, error_msg);
+            try outputJson(ctx.writer, null, null, null, error_msg);
         }
         return;
     };
 
-    log.info("Got {} URLs", .{urls.len});
+    try spinner.print("Got {} URLs\n", .{urls.len});
     for (urls) |url| {
-        log.debug("URL: {s}", .{url});
+        try spinner.print("URL: {s}\n", .{url});
     }
 
     // Measure latency first
@@ -95,9 +97,9 @@ fn run(ctx: zli.CommandContext) !void {
     defer latency_tester.deinit();
 
     const latency_ms = if (!json_output) blk: {
-        try ctx.spinner.start(.{}, "Measuring latency...", .{});
+        try spinner.start("Measuring latency...", .{});
         const result = latency_tester.measureLatency(urls) catch |err| {
-            log.err("Latency test failed: {}", .{err});
+            try spinner.fail("Latency test failed: {}", .{err});
             break :blk null;
         };
         break :blk result;
@@ -106,7 +108,7 @@ fn run(ctx: zli.CommandContext) !void {
     };
 
     if (!json_output) {
-        try ctx.spinner.start(.{}, "Measuring download speed...", .{});
+        try spinner.start("Measuring download speed...", .{});
     }
 
     // Initialize speed tester
@@ -126,15 +128,15 @@ fn run(ctx: zli.CommandContext) !void {
     const download_result = if (json_output) blk: {
         // JSON mode: clean output only
         break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch |err| {
-            log.err("Download test failed: {}", .{err});
-            try outputJson(null, null, null, "Download test failed");
+            try spinner.fail("Download test failed: {}", .{err});
+            try outputJson(ctx.writer, null, null, null, "Download test failed");
             return;
         };
     } else blk: {
         // Interactive mode with spinner updates
-        const progressCallback = progress.createCallback(ctx.spinner, updateSpinnerText);
+        const progressCallback = progress.createCallback(spinner, updateSpinnerText);
         break :blk speed_tester.measureDownloadSpeedWithStabilityProgress(urls, criteria, progressCallback) catch |err| {
-            try ctx.spinner.fail("Download test failed: {}", .{err});
+            try spinner.fail("Download test failed: {}", .{err});
             return;
         };
     };
@@ -142,21 +144,21 @@ fn run(ctx: zli.CommandContext) !void {
     var upload_result: ?SpeedTestResult = null;
     if (check_upload) {
         if (!json_output) {
-            try ctx.spinner.start(.{}, "Measuring upload speed...", .{});
+            try spinner.start("Measuring upload speed...", .{});
         }
 
         upload_result = if (json_output) blk: {
             // JSON mode: clean output only
             break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch |err| {
-                log.err("Upload test failed: {}", .{err});
-                try outputJson(download_result.speed.value, latency_ms, null, "Upload test failed");
+                try spinner.fail("Upload test failed: {}", .{err});
+                try outputJson(ctx.writer, download_result.speed.value, latency_ms, null, "Upload test failed");
                 return;
             };
         } else blk: {
             // Interactive mode with spinner updates
-            const uploadProgressCallback = progress.createCallback(ctx.spinner, updateUploadSpinnerText);
+            const uploadProgressCallback = progress.createCallback(spinner, updateUploadSpinnerText);
             break :blk speed_tester.measureUploadSpeedWithStabilityProgress(urls, criteria, uploadProgressCallback) catch |err| {
-                try ctx.spinner.fail("Upload test failed: {}", .{err});
+                try spinner.fail("Upload test failed: {}", .{err});
                 return;
             };
         };
@@ -166,36 +168,34 @@ fn run(ctx: zli.CommandContext) !void {
     if (!json_output) {
         if (latency_ms) |ping| {
             if (upload_result) |up| {
-                try ctx.spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
             } else {
-                try ctx.spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString() });
             }
         } else {
             if (upload_result) |up| {
-                try ctx.spinner.succeed("⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                try spinner.succeed("⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
             } else {
-                try ctx.spinner.succeed("⬇️ Download: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("⬇️ Download: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString() });
             }
         }
     } else {
         const upload_speed = if (upload_result) |up| up.speed.value else null;
-        try outputJson(download_result.speed.value, latency_ms, upload_speed, null);
+        try outputJson(ctx.writer, download_result.speed.value, latency_ms, upload_speed, null);
     }
 }
 
 /// Update spinner text with current speed measurement
 fn updateSpinnerText(spinner: anytype, measurement: SpeedMeasurement) void {
-    spinner.updateText("⬇️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
+    spinner.updateMessage("⬇️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
 /// Update spinner text with current upload speed measurement
 fn updateUploadSpinnerText(spinner: anytype, measurement: SpeedMeasurement) void {
-    spinner.updateText("⬆️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
+    spinner.updateMessage("⬆️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
-fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_message: ?[]const u8) !void {
-    const stdout = std.io.getStdOut().writer();
-
+fn outputJson(writer: *Writer, download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_message: ?[]const u8) !void {
     var download_buf: [32]u8 = undefined;
     var ping_buf: [32]u8 = undefined;
     var upload_buf: [32]u8 = undefined;
@@ -206,5 +206,5 @@ fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_messa
     const upload_str = if (upload_mbps) |u| try std.fmt.bufPrint(&upload_buf, "{d:.1}", .{u}) else "null";
     const error_str = if (error_message) |e| try std.fmt.bufPrint(&error_buf, "\"{s}\"", .{e}) else "null";
 
-    try stdout.print("{{\"download_mbps\": {s}, \"ping_ms\": {s}, \"upload_mbps\": {s}, \"error\": {s}}}\n", .{ download_str, ping_str, upload_str, error_str });
+    try writer.print("{{\"download_mbps\": {s}, \"ping_ms\": {s}, \"upload_mbps\": {s}, \"error\": {s}}}\n", .{ download_str, ping_str, upload_str, error_str });
 }

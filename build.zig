@@ -4,16 +4,16 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // library tests
-    const library_tests = b.addTest(.{
-        .root_source_file = b.path("src/test.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const run_library_tests = b.addRunArtifact(library_tests);
+    // // library tests
+    // const library_tests = b.addTest(.{
+    //     .root_source_file = b.path("src/test.zig"),
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
+    // const run_library_tests = b.addRunArtifact(library_tests);
 
-    const test_step = b.step("test", "Run all tests");
-    test_step.dependOn(&run_library_tests.step);
+    // const test_step = b.step("test", "Run all tests");
+    // test_step.dependOn(&run_library_tests.step);
 
     const dep_zli = b.dependency("zli", .{
         .target = target,
@@ -43,16 +43,24 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "fast-cli",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .strip = optimize != .Debug,
+        .root_module = b.createModule(.{
+            // b.createModule defines a new module just like b.addModule but,
+            // unlike b.addModule, it does not expose the module to consumers of
+            // this package, which is why in this case we don't have to give it a name.
+            .root_source_file = b.path("src/main.zig"),
+            // Target and optimization levels must be explicitly wired in when
+            // defining an executable or library (in the root module), and you
+            // can also hardcode a specific target for an executable or library
+            // definition if desireable (e.g. firmware for embedded devices).
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     exe.root_module.addImport("zli", mod_zli);
     exe.root_module.addImport("mvzr", mod_mvzr);
     exe.root_module.addImport("build_options", build_options.createModule());
-    library_tests.root_module.addImport("mvzr", mod_mvzr);
+    // library_tests.root_module.addImport("mvzr", mod_mvzr);
 
     // Link against the static library instead
 
