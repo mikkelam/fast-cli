@@ -205,7 +205,7 @@ test "parse_response_urls_v2" {
     ;
     const allocator = testing.allocator;
 
-    const urls = try Fast.parse_response_urls(response, allocator);
+    var urls = try Fast.parse_response_urls(response, allocator);
     defer {
         for (urls.items) |url| {
             allocator.free(url);
@@ -275,7 +275,7 @@ test "parse_response_without_isp" {
     ;
     const allocator = testing.allocator;
 
-    const urls = try Fast.parse_response_urls(response, allocator);
+    var urls = try Fast.parse_response_urls(response, allocator);
     defer {
         for (urls.items) |url| {
             allocator.free(url);
@@ -293,7 +293,7 @@ test "parse_response_minimal_client" {
     ;
     const allocator = testing.allocator;
 
-    const urls = try Fast.parse_response_urls(response, allocator);
+    var urls = try Fast.parse_response_urls(response, allocator);
     defer {
         for (urls.items) |url| {
             allocator.free(url);

@@ -468,7 +468,7 @@ pub const MockHttpClient = struct {
     pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .allocator = allocator,
-            .responses = std.ArrayList(FetchResponse).init(allocator),
+            .responses = std.ArrayList(FetchResponse).empty,
             .request_count = std.atomic.Value(u32).init(0),
         };
     }
@@ -477,12 +477,12 @@ pub const MockHttpClient = struct {
         for (self.responses.items) |*response| {
             self.allocator.free(response.body);
         }
-        self.responses.deinit();
+        self.responses.deinit(self.allocator);
     }
 
     pub fn addResponse(self: *Self, status: http.Status, body: []const u8) !void {
         const body_copy = try self.allocator.dupe(u8, body);
-        try self.responses.append(FetchResponse{
+        try self.responses.append(self.allocator, FetchResponse{
             .status = status,
             .body = body_copy,
             .allocator = self.allocator,
