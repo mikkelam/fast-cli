@@ -1,5 +1,6 @@
 const std = @import("std");
 const http = std.http;
+const log = std.log.scoped(.cli);
 
 pub const HttpLatencyTester = struct {
     allocator: std.mem.Allocator,
@@ -18,15 +19,21 @@ pub const HttpLatencyTester = struct {
 
     /// Measure latency to multiple URLs using HEAD requests
     /// Returns median latency in milliseconds, or null if all requests failed
+    /// Zig's http client seems to be ~20ms slower than curl.
+    /// Let's not worry about that misreporting for now
     pub fn measureLatency(self: *Self, urls: []const []const u8) !?f64 {
         if (urls.len == 0) return null;
 
-        var latencies = std.ArrayList(f64).empty;
+        var latencies: std.ArrayList(f64) = .{};
         defer latencies.deinit(self.allocator);
+
+        // HTTP client for all requests
+        var client = http.Client{ .allocator = self.allocator };
+        defer client.deinit();
 
         // Test each URL
         for (urls) |url| {
-            if (self.measureSingleUrl(url)) |latency_ms| {
+            if (self.measureSingleUrl(url, &client)) |latency_ms| {
                 try latencies.append(self.allocator, latency_ms);
             } else |_| {
                 // Ignore errors, continue with other URLs
@@ -36,42 +43,26 @@ pub const HttpLatencyTester = struct {
 
         if (latencies.items.len == 0) return null;
 
+        log.info("Latencies: {any}", .{latencies.items});
+
         // Return median latency
         return self.calculateMedian(latencies.items);
     }
 
-    /// Measure latency to a single URL using connection reuse method
-    /// First request establishes HTTPS connection, second request measures pure RTT
-    fn measureSingleUrl(self: *Self, url: []const u8) !f64 {
-        var client = http.Client{ .allocator = self.allocator };
-        defer client.deinit();
+    /// Measure latency to a single URL using HEAD request
+    fn measureSingleUrl(self: *Self, url: []const u8, client: *http.Client) !f64 {
+        _ = self;
 
         // Parse URL
         const uri = try std.Uri.parse(url);
 
-        // First request: Establish HTTPS connection (ignore timing)
-        {
-            const server_header_buffer = try self.allocator.alloc(u8, 4096);
-            defer self.allocator.free(server_header_buffer);
-
-            var req = try client.request(.HEAD, uri, .{});
-            defer req.deinit();
-
-            try req.sendBodiless();
-        }
-
-        // Second request: Reuse connection and measure pure HTTP RTT
+        // Measure request/response timing
         const start_time = std.time.nanoTimestamp();
 
-        {
-            const server_header_buffer = try self.allocator.alloc(u8, 4096);
-            defer self.allocator.free(server_header_buffer);
-
-            var req = try client.request(.HEAD, uri, .{});
-            defer req.deinit();
-
-            try req.sendBodiless();
-        }
+        _ = try client.fetch(.{
+            .method = .HEAD,
+            .location = .{ .uri = uri },
+        });
 
         const end_time = std.time.nanoTimestamp();
 
