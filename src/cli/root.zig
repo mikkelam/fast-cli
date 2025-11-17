@@ -3,6 +3,8 @@ const zli = @import("zli");
 const builtin = @import("builtin");
 const Writer = std.Io.Writer;
 
+const log = std.log.scoped(.cli);
+
 const Fast = @import("../lib/fast.zig").Fast;
 const HTTPSpeedTester = @import("../lib/http_speed_tester_v2.zig").HTTPSpeedTester;
 
@@ -67,7 +69,7 @@ fn run(ctx: zli.CommandContext) !void {
 
     const spinner = ctx.spinner;
 
-    try spinner.print("Config: https={}, upload={}, json={}, max_duration={}s\n", .{
+    log.info("Config: https={}, upload={}, json={}, max_duration={}s", .{
         use_https, check_upload, json_output, max_duration,
     });
 
@@ -87,9 +89,9 @@ fn run(ctx: zli.CommandContext) !void {
         return;
     };
 
-    try spinner.print("Got {} URLs\n", .{urls.len});
+    log.info("Got {} URLs\n", .{urls.len});
     for (urls) |url| {
-        try spinner.print("URL: {s}\n", .{url});
+        log.info("URL: {s}\n", .{url});
     }
 
     // Measure latency first
@@ -108,7 +110,7 @@ fn run(ctx: zli.CommandContext) !void {
     };
 
     if (!json_output) {
-        try spinner.start("Measuring download speed...", .{});
+        log.info("Measuring download speed...", .{});
     }
 
     // Initialize speed tester
@@ -144,7 +146,7 @@ fn run(ctx: zli.CommandContext) !void {
     var upload_result: ?SpeedTestResult = null;
     if (check_upload) {
         if (!json_output) {
-            try spinner.start("Measuring upload speed...", .{});
+            log.info("Measuring upload speed...", .{});
         }
 
         upload_result = if (json_output) blk: {
