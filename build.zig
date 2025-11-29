@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const dep_zli = b.dependency("zli", .{ .target = target });
+    const dep_clap = b.dependency("clap", .{ .target = target, .optimize = optimize });
     const dep_mvzr = b.dependency("mvzr", .{ .target = target, .optimize = optimize });
 
     const build_options = b.addOptions();
@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.root_module.addImport("zli", dep_zli.module("zli"));
+    exe.root_module.addImport("clap", dep_clap.module("clap"));
     exe.root_module.addImport("mvzr", dep_mvzr.module("mvzr"));
     exe.root_module.addImport("build_options", build_options.createModule());
 
