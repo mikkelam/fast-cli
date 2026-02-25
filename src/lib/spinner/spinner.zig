@@ -194,8 +194,7 @@ test "spinner outputs hide cursor on start" {
     Thread.sleep(50 * std.time.ns_per_ms);
     spinner.stop();
 
-    const output = test_writer.buffer[0..test_writer.end];
-    std.debug.print("Buffer end: {}, Output len: {}, Output: {s}\n", .{ test_writer.end, output.len, output });
+    const output = getTestOutput(&spinner);
     try testing.expect(std.mem.indexOf(u8, output, HIDE_CURSOR) != null);
 }
 
@@ -212,7 +211,7 @@ test "spinner outputs show cursor on stop" {
     Thread.sleep(50 * std.time.ns_per_ms);
     spinner.stop();
 
-    const output = test_writer.buffer[0..test_writer.end];
+    const output = getTestOutput(&spinner);
     try testing.expect(std.mem.indexOf(u8, output, SHOW_CURSOR) != null);
 }
 
@@ -229,7 +228,7 @@ test "spinner outputs message and frames" {
     Thread.sleep(150 * std.time.ns_per_ms);
     spinner.stop();
 
-    const output = test_writer.buffer[0..test_writer.end];
+    const output = getTestOutput(&spinner);
     try testing.expect(std.mem.indexOf(u8, output, "Loading data") != null);
     try testing.expect(std.mem.indexOf(u8, output, CLEAR_LINE) != null);
 }
@@ -247,7 +246,7 @@ test "spinner succeed outputs green checkmark" {
     Thread.sleep(50 * std.time.ns_per_ms);
     try spinner.succeed("Done", .{});
 
-    const output = test_writer.buffer[0..test_writer.end];
+    const output = getTestOutput(&spinner);
     try testing.expect(std.mem.indexOf(u8, output, "✔") != null);
     try testing.expect(std.mem.indexOf(u8, output, GREEN) != null);
     try testing.expect(std.mem.indexOf(u8, output, "Done") != null);
@@ -266,7 +265,7 @@ test "spinner fail outputs red cross" {
     Thread.sleep(50 * std.time.ns_per_ms);
     try spinner.fail("Error occurred", .{});
 
-    const output = test_writer.buffer[0..test_writer.end];
+    const output = getTestOutput(&spinner);
     try testing.expect(std.mem.indexOf(u8, output, "✖") != null);
     try testing.expect(std.mem.indexOf(u8, output, RED) != null);
     try testing.expect(std.mem.indexOf(u8, output, "Error occurred") != null);
@@ -287,7 +286,7 @@ test "spinner updateMessage changes displayed text" {
     Thread.sleep(100 * std.time.ns_per_ms);
     spinner.stop();
 
-    const output = test_writer.buffer[0..test_writer.end];
+    const output = getTestOutput(&spinner);
     try testing.expect(std.mem.indexOf(u8, output, "Step 1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "Step 2") != null);
 }
@@ -317,4 +316,11 @@ test "spinner multiple start/stop cycles work" {
     }
 
     try testing.expect(spinner.thread == null);
+}
+
+fn getTestOutput(spinner: *Spinner) []const u8 {
+    return switch (spinner.writer) {
+        .test_writer => |*w| w.buffer[0..w.end],
+        else => &.{},
+    };
 }
