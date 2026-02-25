@@ -28,7 +28,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
         args.duration,
     });
 
-    var spinner = Spinner.init(allocator);
+    var spinner = Spinner.init(allocator, .{});
     defer spinner.deinit();
 
     var fast = Fast.init(std.heap.smp_allocator, args.https);
@@ -149,25 +149,11 @@ pub fn run(allocator: std.mem.Allocator) !void {
 }
 
 fn updateSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
-    spinner.mutex.lock();
-    defer spinner.mutex.unlock();
-
-    if (spinner.message.len > 0) {
-        spinner.allocator.free(spinner.message);
-    }
-
-    spinner.message = std.fmt.allocPrint(spinner.allocator, "⬇️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch return;
+    spinner.updateMessage("⬇️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
 fn updateUploadSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
-    spinner.mutex.lock();
-    defer spinner.mutex.unlock();
-
-    if (spinner.message.len > 0) {
-        spinner.allocator.free(spinner.message);
-    }
-
-    spinner.message = std.fmt.allocPrint(spinner.allocator, "⬆️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch return;
+    spinner.updateMessage("⬆️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
 fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_message: ?[]const u8) !void {

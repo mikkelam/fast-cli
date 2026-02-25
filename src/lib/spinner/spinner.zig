@@ -6,8 +6,14 @@ const Spinner = @This();
 
 const frames = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
+const WriterType = union(enum) {
+    file: std.fs.File.Writer,
+    test_writer: std.Io.Writer,
+};
+
 pub const Options = struct {
     refresh_rate_ms: u64 = 80,
+    writer: ?WriterType = null,
 };
 
 // ANSI escape codes
@@ -19,24 +25,31 @@ const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
 allocator: Allocator,
-message: []u8,
-stderr_buffer: [4096]u8 = undefined,
+message: []u8 = &.{},
+writer_buffer: [4096]u8,
+writer: WriterType,
 thread: ?Thread = null,
 mutex: Thread.Mutex = .{},
-should_stop: std.atomic.Value(bool),
+should_stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
 refresh_rate_ms: u64,
 
-pub fn init(allocator: Allocator) Spinner {
-    return initWithOptions(allocator, .{});
-}
+pub fn init(allocator: Allocator, options: Options) Spinner {
+    var spinner: Spinner = undefined;
+    spinner.allocator = allocator;
+    spinner.refresh_rate_ms = options.refresh_rate_ms;
+    spinner.message = &.{};
+    spinner.thread = null;
+    spinner.mutex = .{};
+    spinner.should_stop = std.atomic.Value(bool).init(true);
 
-pub fn initWithOptions(allocator: Allocator, options: Options) Spinner {
-    return .{
-        .allocator = allocator,
-        .message = &.{},
-        .should_stop = std.atomic.Value(bool).init(true),
-        .refresh_rate_ms = options.refresh_rate_ms,
-    };
+    if (options.writer) |w| {
+        spinner.writer_buffer = undefined;
+        spinner.writer = w;
+    } else {
+        spinner.writer = .{ .file = std.fs.File.stderr().writer(&spinner.writer_buffer) };
+    }
+
+    return spinner;
 }
 
 pub fn deinit(self: *Spinner) void {
@@ -60,10 +73,15 @@ pub fn start(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     }
     self.message = try std.fmt.allocPrint(self.allocator, fmt, args);
 
-    // Hide cursor
-    var stderr_writer = std.fs.File.stderr().writerStreaming(&self.stderr_buffer);
-    const stderr = &stderr_writer.interface;
-    stderr.writeAll(HIDE_CURSOR) catch {};
+    switch (self.writer) {
+        .file => |*w| {
+            w.interface.writeAll(HIDE_CURSOR) catch {};
+            w.interface.flush() catch {};
+        },
+        .test_writer => |*w| {
+            w.writeAll(HIDE_CURSOR) catch {};
+        },
+    }
 
     self.should_stop.store(false, .release);
     self.thread = try Thread.spawn(.{}, spinLoop, .{self});
@@ -78,11 +96,15 @@ pub fn stop(self: *Spinner) void {
         self.thread = null;
     }
 
-    // Clear the line and show cursor
-    var stderr_writer = std.fs.File.stderr().writerStreaming(&self.stderr_buffer);
-    const stderr = &stderr_writer.interface;
-    stderr.writeAll(CLEAR_LINE ++ SHOW_CURSOR) catch {};
-    stderr.flush() catch {};
+    switch (self.writer) {
+        .file => |*w| {
+            w.interface.writeAll(CLEAR_LINE ++ SHOW_CURSOR) catch {};
+            w.interface.flush() catch {};
+        },
+        .test_writer => |*w| {
+            w.writeAll(CLEAR_LINE ++ SHOW_CURSOR) catch {};
+        },
+    }
 }
 
 pub fn updateMessage(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
@@ -103,11 +125,17 @@ pub fn succeed(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     defer self.allocator.free(msg);
     self.mutex.unlock();
 
-    var stderr_writer = std.fs.File.stderr().writerStreaming(&self.stderr_buffer);
-    const stderr = &stderr_writer.interface;
-    stderr.writeAll(SHOW_CURSOR) catch {};
-    try stderr.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
-    try stderr.flush();
+    switch (self.writer) {
+        .file => |*w| {
+            w.interface.writeAll(SHOW_CURSOR) catch {};
+            try w.interface.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
+            try w.interface.flush();
+        },
+        .test_writer => |*w| {
+            w.writeAll(SHOW_CURSOR) catch {};
+            try w.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
+        },
+    }
 }
 
 pub fn fail(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
@@ -118,24 +146,34 @@ pub fn fail(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     defer self.allocator.free(msg);
     self.mutex.unlock();
 
-    var stderr_writer = std.fs.File.stderr().writerStreaming(&self.stderr_buffer);
-    const stderr = &stderr_writer.interface;
-    stderr.writeAll(SHOW_CURSOR) catch {};
-    try stderr.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
-    try stderr.flush();
+    switch (self.writer) {
+        .file => |*w| {
+            w.interface.writeAll(SHOW_CURSOR) catch {};
+            try w.interface.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
+            try w.interface.flush();
+        },
+        .test_writer => |*w| {
+            w.writeAll(SHOW_CURSOR) catch {};
+            try w.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
+        },
+    }
 }
 
 fn spinLoop(self: *Spinner) void {
-    var stderr_buffer: [256]u8 = undefined;
-    var stderr_writer = std.fs.File.stderr().writerStreaming(&stderr_buffer);
-    const stderr = &stderr_writer.interface;
     var frame_idx: usize = 0;
 
     while (!self.should_stop.load(.acquire)) {
         self.mutex.lock();
         const msg = self.message;
-        stderr.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
-        stderr.flush() catch {};
+        switch (self.writer) {
+            .file => |*w| {
+                w.interface.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
+                w.interface.flush() catch {};
+            },
+            .test_writer => |*w| {
+                w.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
+            },
+        }
         self.mutex.unlock();
 
         frame_idx = (frame_idx + 1) % frames.len;
@@ -143,87 +181,140 @@ fn spinLoop(self: *Spinner) void {
     }
 }
 
-test "spinner init and deinit" {
+test "spinner outputs hide cursor on start" {
     const testing = std.testing;
-    var spinner = Spinner.init(testing.allocator);
+
+    var buffer: [4096]u8 = undefined;
+    const test_writer = std.Io.Writer.fixed(&buffer);
+
+    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
-    try testing.expect(spinner.message.len == 0);
-    try testing.expect(spinner.thread == null);
+    try spinner.start("Processing", .{});
+    Thread.sleep(50 * std.time.ns_per_ms);
+    spinner.stop();
+
+    const output = test_writer.buffer[0..test_writer.end];
+    std.debug.print("Buffer end: {}, Output len: {}, Output: {s}\n", .{ test_writer.end, output.len, output });
+    try testing.expect(std.mem.indexOf(u8, output, HIDE_CURSOR) != null);
 }
 
-test "spinner start and stop" {
+test "spinner outputs show cursor on stop" {
     const testing = std.testing;
 
-    var spinner = Spinner.init(testing.allocator);
+    var buffer: [4096]u8 = undefined;
+    const test_writer = std.Io.Writer.fixed(&buffer);
+
+    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
-    try spinner.start("Testing {s}", .{"spinner"});
-    try testing.expect(!spinner.should_stop.load(.acquire));
-    try testing.expect(spinner.thread != null);
-
+    try spinner.start("Loading", .{});
     Thread.sleep(50 * std.time.ns_per_ms);
+    spinner.stop();
+
+    const output = test_writer.buffer[0..test_writer.end];
+    try testing.expect(std.mem.indexOf(u8, output, SHOW_CURSOR) != null);
+}
+
+test "spinner outputs message and frames" {
+    const testing = std.testing;
+
+    var buffer: [4096]u8 = undefined;
+    const test_writer = std.Io.Writer.fixed(&buffer);
+
+    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer }, .refresh_rate_ms = 30 });
+    defer spinner.deinit();
+
+    try spinner.start("Loading {s}", .{"data"});
+    Thread.sleep(150 * std.time.ns_per_ms);
+    spinner.stop();
+
+    const output = test_writer.buffer[0..test_writer.end];
+    try testing.expect(std.mem.indexOf(u8, output, "Loading data") != null);
+    try testing.expect(std.mem.indexOf(u8, output, CLEAR_LINE) != null);
+}
+
+test "spinner succeed outputs green checkmark" {
+    const testing = std.testing;
+
+    var buffer: [4096]u8 = undefined;
+    const test_writer = std.Io.Writer.fixed(&buffer);
+
+    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
+    defer spinner.deinit();
+
+    try spinner.start("Working", .{});
+    Thread.sleep(50 * std.time.ns_per_ms);
+    try spinner.succeed("Done", .{});
+
+    const output = test_writer.buffer[0..test_writer.end];
+    try testing.expect(std.mem.indexOf(u8, output, "✔") != null);
+    try testing.expect(std.mem.indexOf(u8, output, GREEN) != null);
+    try testing.expect(std.mem.indexOf(u8, output, "Done") != null);
+}
+
+test "spinner fail outputs red cross" {
+    const testing = std.testing;
+
+    var buffer: [4096]u8 = undefined;
+    const test_writer = std.Io.Writer.fixed(&buffer);
+
+    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
+    defer spinner.deinit();
+
+    try spinner.start("Working", .{});
+    Thread.sleep(50 * std.time.ns_per_ms);
+    try spinner.fail("Error occurred", .{});
+
+    const output = test_writer.buffer[0..test_writer.end];
+    try testing.expect(std.mem.indexOf(u8, output, "✖") != null);
+    try testing.expect(std.mem.indexOf(u8, output, RED) != null);
+    try testing.expect(std.mem.indexOf(u8, output, "Error occurred") != null);
+}
+
+test "spinner updateMessage changes displayed text" {
+    const testing = std.testing;
+
+    var buffer: [4096]u8 = undefined;
+    const test_writer = std.Io.Writer.fixed(&buffer);
+
+    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer }, .refresh_rate_ms = 30 });
+    defer spinner.deinit();
+
+    try spinner.start("Step 1", .{});
+    Thread.sleep(100 * std.time.ns_per_ms);
+    try spinner.updateMessage("Step 2", .{});
+    Thread.sleep(100 * std.time.ns_per_ms);
+    spinner.stop();
+
+    const output = test_writer.buffer[0..test_writer.end];
+    try testing.expect(std.mem.indexOf(u8, output, "Step 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "Step 2") != null);
+}
+
+test "spinner can stop without starting" {
+    const testing = std.testing;
+    var spinner = Spinner.init(testing.allocator, .{});
+    defer spinner.deinit();
 
     spinner.stop();
     try testing.expect(spinner.should_stop.load(.acquire));
-    try testing.expect(spinner.thread == null);
 }
 
-test "spinner updateMessage" {
+test "spinner multiple start/stop cycles work" {
     const testing = std.testing;
 
-    var spinner = Spinner.init(testing.allocator);
-    defer spinner.deinit();
+    var buffer: [4096]u8 = undefined;
+    const test_writer = std.Io.Writer.fixed(&buffer);
 
-    try spinner.start("Initial", .{});
-    Thread.sleep(20 * std.time.ns_per_ms);
-
-    try spinner.updateMessage("Updated {d}", .{42});
-    Thread.sleep(20 * std.time.ns_per_ms);
-
-    spinner.stop();
-}
-
-test "spinner multiple start/stop cycles" {
-    const testing = std.testing;
-
-    var spinner = Spinner.init(testing.allocator);
+    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
     for (0..3) |i| {
         try spinner.start("Cycle {d}", .{i});
-        Thread.sleep(20 * std.time.ns_per_ms);
+        Thread.sleep(50 * std.time.ns_per_ms);
         spinner.stop();
     }
-}
 
-test "spinner succeed" {
-    const testing = std.testing;
-
-    var spinner = Spinner.init(testing.allocator);
-    defer spinner.deinit();
-
-    try spinner.start("Processing...", .{});
-    Thread.sleep(20 * std.time.ns_per_ms);
-    try spinner.succeed("Test completed", .{});
-}
-
-test "spinner fail" {
-    const testing = std.testing;
-
-    var spinner = Spinner.init(testing.allocator);
-    defer spinner.deinit();
-
-    try spinner.start("Processing...", .{});
-    Thread.sleep(20 * std.time.ns_per_ms);
-    try spinner.fail("Test error", .{});
-}
-
-test "spinner stop without start is safe" {
-    const testing = std.testing;
-    var spinner = Spinner.init(testing.allocator);
-    defer spinner.deinit();
-
-    spinner.stop();
-    spinner.stop();
+    try testing.expect(spinner.thread == null);
 }

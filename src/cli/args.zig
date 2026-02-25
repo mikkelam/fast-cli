@@ -1,9 +1,11 @@
 const std = @import("std");
 const clap = @import("clap");
 const Allocator = std.mem.Allocator;
+const build_options = @import("build_options");
 
 // ANSI formatting codes
 const BOLD = "\x1b[1m";
+const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
 pub const Args = struct {
@@ -65,9 +67,10 @@ pub fn printHelp() !void {
     var stderr_buffer: [4096]u8 = undefined;
     var stderr_writer = std.fs.File.stderr().writerStreaming(&stderr_buffer);
     const stderr = &stderr_writer.interface;
-    try stderr.writeAll(BOLD ++ "Estimate connection speed using fast.com\n\n" ++ RESET);
-    try stderr.writeAll("Usage: fast-cli [OPTIONS]\n\n");
-    try stderr.writeAll("Options:\n");
+    try stderr.print(BOLD ++ "fast-cli" ++ RESET ++ " v{s} - Estimate connection speed using fast.com\n\n", .{build_options.version});
+    try stderr.writeAll(YELLOW ++ "USAGE:\n" ++ RESET);
+    try stderr.writeAll("    fast-cli [OPTIONS]\n\n");
+    try stderr.writeAll(YELLOW ++ "OPTIONS:\n" ++ RESET);
     try clap.help(stderr, clap.Help, &params, .{ .spacing_between_parameters = 0, .description_on_new_line = false });
     try stderr.flush();
 }
