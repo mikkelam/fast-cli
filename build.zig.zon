@@ -8,13 +8,13 @@
     .minimum_zig_version = "0.15.1",
 
     .dependencies = .{
-        .zli = .{
-            .url = "https://github.com/xcaeser/zli/archive/v4.1.1.tar.gz",
-            .hash = "zli-4.1.1-LeUjpljfAAAak_E3L4NPowuzPs_FUF9-jYyxuTSNSthM",
-        },
         .mvzr = .{
             .url = "https://github.com/mnemnion/mvzr/archive/refs/tags/v0.3.7.tar.gz",
             .hash = "mvzr-0.3.7-ZSOky5FtAQB2VrFQPNbXHQCFJxWTMAYEK7ljYEaMR6jt",
+        },
+        .clap = .{
+            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.11.0.tar.gz",
+            .hash = "clap-0.11.0-oBajB-HnAQDPCKYzwF7rO3qDFwRcD39Q0DALlTSz5H7e",
         },
     },
     .paths = .{
