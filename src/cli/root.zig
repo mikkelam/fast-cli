@@ -79,7 +79,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
 
     const criteria = StabilityCriteria{
         .ramp_up_duration_seconds = 4,
-        .max_duration_seconds = @as(u32, @intCast(@max(25, args.duration))),
+        .max_duration_seconds = @as(u32, @intCast(@min(25, args.duration))),
         .measurement_interval_ms = 750,
         .sliding_window_size = 6,
         .stability_threshold_cov = 0.15,
