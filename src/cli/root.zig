@@ -70,7 +70,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
 
     if (!args.json) {
         log.info("Measuring download speed...", .{});
-        try spinner.start("⬇️ 0.0 Mbps", .{});
+        try spinner.start("⬇️ 0 Mbps", .{});
     }
 
     // Initialize speed tester
@@ -106,7 +106,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     if (args.upload) {
         if (!args.json) {
             log.info("Measuring upload speed...", .{});
-            try spinner.updateMessage("⬆️ 0.0 Mbps", .{});
+            try spinner.updateMessage("⬆️ 0 Mbps", .{});
         }
 
         upload_result = if (args.json) blk: {
@@ -128,15 +128,15 @@ pub fn run(allocator: std.mem.Allocator) !void {
     if (!args.json) {
         if (latency_ms) |ping| {
             if (upload_result) |up| {
-                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
             } else {
-                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString() });
             }
         } else {
             if (upload_result) |up| {
-                try spinner.succeed("⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                try spinner.succeed("⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
             } else {
-                try spinner.succeed("⬇️ Download: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("⬇️ Download: {d:.0} {s}", .{ download_result.speed.value, download_result.speed.unit.toString() });
             }
         }
     } else {
@@ -146,11 +146,11 @@ pub fn run(allocator: std.mem.Allocator) !void {
 }
 
 fn updateSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
-    spinner.updateMessage("⬇️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
+    spinner.updateMessage("⬇️ {d:.0} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
 fn updateUploadSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
-    spinner.updateMessage("⬆️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
+    spinner.updateMessage("⬆️ {d:.0} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
 fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_message: ?[]const u8) !void {
@@ -163,9 +163,9 @@ fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_messa
     var upload_buf: [32]u8 = undefined;
     var error_buf: [256]u8 = undefined;
 
-    const download_str = if (download_mbps) |d| try std.fmt.bufPrint(&download_buf, "{d:.1}", .{d}) else "null";
+    const download_str = if (download_mbps) |d| try std.fmt.bufPrint(&download_buf, "{d:.0}", .{d}) else "null";
     const ping_str = if (ping_ms) |p| try std.fmt.bufPrint(&ping_buf, "{d:.1}", .{p}) else "null";
-    const upload_str = if (upload_mbps) |u| try std.fmt.bufPrint(&upload_buf, "{d:.1}", .{u}) else "null";
+    const upload_str = if (upload_mbps) |u| try std.fmt.bufPrint(&upload_buf, "{d:.0}", .{u}) else "null";
     const error_str = if (error_message) |e| try std.fmt.bufPrint(&error_buf, "\"{s}\"", .{e}) else "null";
 
     try stdout.print("{{\"download_mbps\": {s}, \"ping_ms\": {s}, \"upload_mbps\": {s}, \"error\": {s}}}\n", .{ download_str, ping_str, upload_str, error_str });
