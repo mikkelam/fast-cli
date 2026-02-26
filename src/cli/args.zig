@@ -13,7 +13,6 @@ pub const Args = struct {
     upload: bool,
     json: bool,
     duration: u32,
-    connections_max: u32,
     help: bool,
 
     allocator: Allocator,
@@ -33,7 +32,6 @@ const params = clap.parseParamsComptime(
     \\-u, --upload            Check upload speed as well
     \\-j, --json              Output results in JSON format
     \\-d, --duration <usize>  Maximum test duration in seconds (default: 30)
-    \\-c, --connections-max <usize>  Maximum concurrent connections (default: 8)
     \\
 );
 
@@ -59,7 +57,6 @@ pub fn parse(allocator: Allocator) !Args {
         .upload = res.args.upload != 0,
         .json = res.args.json != 0,
         .duration = res.args.duration orelse 30,
-        .connections_max = res.args.@"connections-max" orelse 8,
         .help = res.args.help != 0,
         .allocator = allocator,
         .clap_result = res,

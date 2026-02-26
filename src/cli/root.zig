@@ -21,12 +21,11 @@ pub fn run(allocator: std.mem.Allocator) !void {
         return;
     }
 
-    log.info("Config: https={}, upload={}, json={}, max_duration={}s, connections_max={}", .{
+    log.info("Config: https={}, upload={}, json={}, max_duration={}s", .{
         args.https,
         args.upload,
         args.json,
         args.duration,
-        args.connections_max,
     });
 
     var spinner = Spinner.init(allocator, .{});
@@ -86,7 +85,6 @@ pub fn run(allocator: std.mem.Allocator) !void {
         .stability_delta_percent = 2.0,
         .min_stable_measurements = 6,
         .connections_min = 1,
-        .connections_max = @max(args.connections_max, @as(u32, 1)),
         .max_bytes_in_flight = 78_643_200,
     };
 
