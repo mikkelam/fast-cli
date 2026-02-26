@@ -1,7 +1,7 @@
 .{
     .name = .fast_cli,
 
-    .version = "0.3.0",
+    .version = "0.3.1",
 
     .fingerprint = 0xfb5a9fbee5075971,
 
