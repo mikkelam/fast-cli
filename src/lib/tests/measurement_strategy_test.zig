@@ -167,4 +167,3 @@ test "StabilityStrategy final speed equals last displayed speed after steady sam
     const final_bps = strategy.finalSpeedBitsPerSecond(total_bytes, last_time_ms * std.time.ns_per_ms);
     try testing.expectEqual(last_display_bps, final_bps);
 }
-
