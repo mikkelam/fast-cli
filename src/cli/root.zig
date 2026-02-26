@@ -78,8 +78,8 @@ pub fn run(allocator: std.mem.Allocator) !void {
     defer speed_tester.deinit();
 
     const criteria = StabilityCriteria{
-        .min_duration_seconds = 7,
-        .max_duration_seconds = @as(u32, @intCast(@min(@as(u32, 30), @max(args.duration, @as(u32, 7))))),
+        .min_duration_seconds = Args.duration_min_seconds,
+        .max_duration_seconds = Args.clampDurationSeconds(args.duration),
         .progress_frequency_ms = 150,
         .moving_average_window_size = 5,
         .stability_delta_percent = 2.0,
