@@ -50,8 +50,7 @@ zig build -Doptimize=ReleaseSafe
 
 ## Usage
 ```console
-fast-cli -h
-fast-cli Estimate connection speed using fast.com
+fast-cli - Estimate connection speed using fast.com
 
 USAGE:
     fast-cli [OPTIONS]
@@ -62,7 +61,7 @@ OPTIONS:
         --no-https                    Use HTTP instead of HTTPS
     -u, --upload                      Check upload speed as well
     -j, --json                        Output results in JSON format
-    -d, --duration <usize>            Maximum test duration in seconds (default: 30)
+    -d, --duration <usize>            Maximum test duration in seconds (effective range: 7-30, default: 30)
 ```
 
 ## Example Output
