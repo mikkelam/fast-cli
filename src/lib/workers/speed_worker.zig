@@ -357,7 +357,7 @@ pub const UploadWorker = struct {
                 .headers = &[_]Header{
                     Header{ .name = "Content-Type", .value = "application/octet-stream" },
                 },
-                .max_response_size = 1024 * 1024, // 1MB response buffer
+                .max_response_size = 1024 * 1024, // 1MB max expected response size
             };
 
             var response = self.http_client.fetch(request) catch |err| {
@@ -485,11 +485,15 @@ pub const RealHttpClient = struct {
         };
 
         const result = try self.client.fetch(fetch_options);
+        const response_bytes = discarding.fullCount();
+        if (response_bytes > request.max_response_size) {
+            return error.ResponseTooLarge;
+        }
 
         return FetchResponse{
             .status = result.status,
             .body = &.{},
-            .byte_count = @intCast(discarding.fullCount()),
+            .byte_count = @intCast(response_bytes),
             .allocator = self.allocator,
         };
     }
