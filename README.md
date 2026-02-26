@@ -23,6 +23,7 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 
 - **Linux**: x86_64, aarch64 (ARM64)
 - **macOS**: x86_64 (Intel), aarch64 (aka Apple Silicon)
+- **Windows**: x86_64 (release binary zip)
 
 ## Installation
 
@@ -31,6 +32,8 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 ```bash
 curl -sSL https://raw.githubusercontent.com/mikkelam/fast-cli/main/install.sh | bash
 ```
+
+`install.sh` currently supports Linux and macOS only (not Windows yet).
 
 ### Pre-built Binaries
 For example, on an Apple Silicon Mac:
