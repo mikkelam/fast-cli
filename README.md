@@ -1,6 +1,6 @@
 # fast-cli
 
-[![Zig](https://img.shields.io/badge/Zig-0.14.0+-orange.svg)](https://ziglang.org/)
+[![Zig](https://img.shields.io/badge/Zig-0.15.2-orange?logo=zig)](https://ziglang.org/)
 [![CI](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -90,6 +90,13 @@ The test stops when either:
 - max duration is reached.
 
 ## Development
+
+Optional: use `mise` to install and run the project toolchain.
+
+```bash
+mise install
+mise exec -- zig build test
+```
 
 ```bash
 # Debug build
