@@ -1,12 +1,12 @@
 # fast-cli
 
-[![Zig](https://img.shields.io/badge/Zig-0.14.0+-orange.svg)](https://ziglang.org/)
+[![Zig](https://img.shields.io/badge/Zig-0.15.2-orange?logo=zig)](https://ziglang.org/)
 [![CI](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Written in Zig for maximum performance.
 
-⚡ **1.2 MB binary** • 🚀 **Zero runtime deps** • 📊 **Smart stability detection**
+⚡ **1.2 MB binary** • 🚀 **Zero runtime deps** • 📊 **Adaptive stability-based stopping**
 
 ## Demo
 
@@ -17,7 +17,7 @@ A blazingly fast CLI tool for testing internet speed uses fast.com v2 api. Writt
 - **Tiny binary**: Just 1.2 MB, no runtime dependencies
 - **Blazing fast**: Concurrent connections with adaptive chunk sizing
 - **Cross-platform**: Single binary for Linux, macOS
-- **Smart stopping**: Uses Coefficient of Variation (CoV) algorithm for adaptive test duration
+- **Smart stopping**: Uses a ramp + steady stability strategy and stops on stable speed or max duration
 
 ## Supported Platforms
 
@@ -50,36 +50,53 @@ zig build -Doptimize=ReleaseSafe
 
 ## Usage
 ```console
-❯ ./fast-cli --help
-Estimate connection speed using fast.com
-v0.0.1
+fast-cli - Estimate connection speed using fast.com
 
-Usage: fast-cli [options]
+USAGE:
+    fast-cli [OPTIONS]
 
-Flags:
- -u, --upload      Check upload speed as well [Bool] (default: false)
- -d, --duration    Maximum test duration in seconds (uses Fast.com-style stability detection by default) [Int] (default: 30)
-     --https      Use https when connecting to fast.com [Bool] (default: true)
- -j, --json        Output results in JSON format [Bool] (default: false)
- -h, --help        Shows the help for a command [Bool] (default: false)
-
-Use "fast-cli --help" for more information.
+OPTIONS:
+    -h, --help                        Display this help and exit.
+        --https                       Use HTTPS when connecting to fast.com (default)
+        --no-https                    Use HTTP instead of HTTPS
+    -u, --upload                      Check upload speed as well
+    -j, --json                        Output results in JSON format
+    -d, --duration <usize>            Maximum test duration in seconds (effective range: 7-30, default: 30)
 ```
 
 ## Example Output
 
 ```console
 $ fast-cli --upload
-🏓 25ms | ⬇️ Download: 113.7 Mbps | ⬆️ Upload: 62.1 Mbps
+🏓 25ms | ⬇️ Download: 114 Mbps | ⬆️ Upload: 62 Mbps
 
 $ fast-cli -d 15  # Quick test with 15s max duration
-🏓 22ms | ⬇️ Download: 105.0 Mbps
+🏓 22ms | ⬇️ Download: 105 Mbps
 
 $ fast-cli -j     # JSON output
-{"download_mbps": 131.4, "ping_ms": 20.8}
+{"download_mbps": 131, "ping_ms": 20.8, "upload_mbps": null, "error": null}
 ```
 
+## Stability Strategy
+
+The speed test uses a two-phase strategy:
+
+1. **Ramp phase**: increase active workers based on observed throughput.
+2. **Steady phase**: lock worker count and estimate authoritative speed.
+
+The test stops when either:
+
+- speed is stable within a configured delta threshold over recent steady samples, or
+- max duration is reached.
+
 ## Development
+
+Optional: use `mise` to install and run the project toolchain.
+
+```bash
+mise install
+mise exec -- zig build test
+```
 
 ```bash
 # Debug build

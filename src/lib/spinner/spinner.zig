@@ -25,7 +25,8 @@ const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
 allocator: Allocator,
-message: []u8 = &.{},
+message_buf: [256]u8 = undefined,
+message_len: usize = 0,
 writer_buffer: [4096]u8,
 writer: WriterType,
 thread: ?Thread = null,
@@ -37,7 +38,8 @@ pub fn init(allocator: Allocator, options: Options) Spinner {
     var spinner: Spinner = undefined;
     spinner.allocator = allocator;
     spinner.refresh_rate_ms = options.refresh_rate_ms;
-    spinner.message = &.{};
+    spinner.message_buf = [_]u8{0} ** 256;
+    spinner.message_len = 0;
     spinner.thread = null;
     spinner.mutex = .{};
     spinner.should_stop = std.atomic.Value(bool).init(true);
@@ -54,12 +56,6 @@ pub fn init(allocator: Allocator, options: Options) Spinner {
 
 pub fn deinit(self: *Spinner) void {
     self.stop();
-    self.mutex.lock();
-    defer self.mutex.unlock();
-    if (self.message.len > 0) {
-        self.allocator.free(self.message);
-        self.message = &.{};
-    }
 }
 
 pub fn start(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
@@ -68,10 +64,7 @@ pub fn start(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     self.mutex.lock();
     defer self.mutex.unlock();
 
-    if (self.message.len > 0) {
-        self.allocator.free(self.message);
-    }
-    self.message = try std.fmt.allocPrint(self.allocator, fmt, args);
+    setMessage(self, fmt, args);
 
     switch (self.writer) {
         .file => |*w| {
@@ -110,11 +103,7 @@ pub fn stop(self: *Spinner) void {
 pub fn updateMessage(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     self.mutex.lock();
     defer self.mutex.unlock();
-
-    if (self.message.len > 0) {
-        self.allocator.free(self.message);
-    }
-    self.message = try std.fmt.allocPrint(self.allocator, fmt, args);
+    setMessage(self, fmt, args);
 }
 
 pub fn succeed(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
@@ -127,12 +116,10 @@ pub fn succeed(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
 
     switch (self.writer) {
         .file => |*w| {
-            w.interface.writeAll(SHOW_CURSOR) catch {};
             try w.interface.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
             try w.interface.flush();
         },
         .test_writer => |*w| {
-            w.writeAll(SHOW_CURSOR) catch {};
             try w.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
         },
     }
@@ -148,12 +135,10 @@ pub fn fail(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
 
     switch (self.writer) {
         .file => |*w| {
-            w.interface.writeAll(SHOW_CURSOR) catch {};
             try w.interface.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
             try w.interface.flush();
         },
         .test_writer => |*w| {
-            w.writeAll(SHOW_CURSOR) catch {};
             try w.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
         },
     }
@@ -164,7 +149,7 @@ fn spinLoop(self: *Spinner) void {
 
     while (!self.should_stop.load(.acquire)) {
         self.mutex.lock();
-        const msg = self.message;
+        const msg = self.message_buf[0..self.message_len];
         switch (self.writer) {
             .file => |*w| {
                 w.interface.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
@@ -179,6 +164,26 @@ fn spinLoop(self: *Spinner) void {
         frame_idx = (frame_idx + 1) % frames.len;
         Thread.sleep(self.refresh_rate_ms * std.time.ns_per_ms);
     }
+}
+
+fn setMessage(self: *Spinner, comptime fmt: []const u8, args: anytype) void {
+    const msg = std.fmt.bufPrint(&self.message_buf, fmt, args) catch |err| switch (err) {
+        error.NoSpaceLeft => {
+            var tmp: [1024]u8 = undefined;
+            const long_msg = std.fmt.bufPrint(&tmp, fmt, args) catch {
+                const truncated = "[message too long]";
+                @memcpy(self.message_buf[0..truncated.len], truncated);
+                self.message_len = truncated.len;
+                return;
+            };
+            const len = @min(long_msg.len, self.message_buf.len);
+            @memcpy(self.message_buf[0..len], long_msg[0..len]);
+            self.message_len = len;
+            return;
+        },
+    };
+
+    self.message_len = msg.len;
 }
 
 test "spinner outputs hide cursor on start" {

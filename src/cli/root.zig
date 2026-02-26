@@ -31,7 +31,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     var spinner = Spinner.init(allocator, .{});
     defer spinner.deinit();
 
-    var fast = Fast.init(std.heap.smp_allocator, args.https);
+    var fast = Fast.init(allocator, args.https);
     defer fast.deinit();
 
     const urls = fast.get_urls(5) catch |err| {
@@ -53,7 +53,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     }
 
     // Measure latency
-    var latency_tester = HttpLatencyTester.init(std.heap.smp_allocator);
+    var latency_tester = HttpLatencyTester.init(allocator);
     defer latency_tester.deinit();
 
     const latency_ms = if (!args.json) blk: {
@@ -70,25 +70,26 @@ pub fn run(allocator: std.mem.Allocator) !void {
 
     if (!args.json) {
         log.info("Measuring download speed...", .{});
-        try spinner.start("Measuring download speed...", .{});
+        try spinner.start("⬇️ 0 Mbps", .{});
     }
 
     // Initialize speed tester
-    var speed_tester = HTTPSpeedTester.init(std.heap.smp_allocator);
+    var speed_tester = HTTPSpeedTester.init(allocator);
     defer speed_tester.deinit();
 
     const criteria = StabilityCriteria{
-        .ramp_up_duration_seconds = 4,
-        .max_duration_seconds = @as(u32, @intCast(@min(25, args.duration))),
-        .measurement_interval_ms = 750,
-        .sliding_window_size = 6,
-        .stability_threshold_cov = 0.15,
-        .stable_checks_required = 2,
+        .min_duration_seconds = Args.duration_min_seconds,
+        .max_duration_seconds = Args.clampDurationSeconds(args.duration),
+        .progress_frequency_ms = 150,
+        .moving_average_window_size = 5,
+        .stability_delta_percent = 2.0,
+        .min_stable_measurements = 6,
+        .connections_min = 1,
+        .max_bytes_in_flight = 78_643_200,
     };
 
     const download_result = if (args.json) blk: {
-        break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch |err| {
-            try spinner.fail("Download test failed: {}", .{err});
+        break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch {
             try outputJson(null, null, null, "Download test failed");
             return;
         };
@@ -98,21 +99,18 @@ pub fn run(allocator: std.mem.Allocator) !void {
             try spinner.fail("Download test failed: {}", .{err});
             return;
         };
-        spinner.stop();
         break :blk result;
     };
 
     var upload_result: ?SpeedTestResult = null;
     if (args.upload) {
         if (!args.json) {
-            spinner.stop();
             log.info("Measuring upload speed...", .{});
-            try spinner.start("Measuring upload speed...", .{});
+            try spinner.updateMessage("⬆️ 0 Mbps", .{});
         }
 
         upload_result = if (args.json) blk: {
-            break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch |err| {
-                try spinner.fail("Upload test failed: {}", .{err});
+            break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch {
                 try outputJson(download_result.speed.value, latency_ms, null, "Upload test failed");
                 return;
             };
@@ -122,7 +120,6 @@ pub fn run(allocator: std.mem.Allocator) !void {
                 try spinner.fail("Upload test failed: {}", .{err});
                 return;
             };
-            spinner.stop();
             break :blk result;
         };
     }
@@ -131,15 +128,15 @@ pub fn run(allocator: std.mem.Allocator) !void {
     if (!args.json) {
         if (latency_ms) |ping| {
             if (upload_result) |up| {
-                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
             } else {
-                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.1} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString() });
             }
         } else {
             if (upload_result) |up| {
-                try spinner.succeed("⬇️ Download: {d:.1} {s} | ⬆️ Upload: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                try spinner.succeed("⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
             } else {
-                try spinner.succeed("⬇️ Download: {d:.1} {s}", .{ download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("⬇️ Download: {d:.0} {s}", .{ download_result.speed.value, download_result.speed.unit.toString() });
             }
         }
     } else {
@@ -149,11 +146,11 @@ pub fn run(allocator: std.mem.Allocator) !void {
 }
 
 fn updateSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
-    spinner.updateMessage("⬇️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
+    spinner.updateMessage("⬇️ {d:.0} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
 fn updateUploadSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
-    spinner.updateMessage("⬆️ {d:.1} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
+    spinner.updateMessage("⬆️ {d:.0} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
 fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_message: ?[]const u8) !void {
@@ -166,9 +163,9 @@ fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_messa
     var upload_buf: [32]u8 = undefined;
     var error_buf: [256]u8 = undefined;
 
-    const download_str = if (download_mbps) |d| try std.fmt.bufPrint(&download_buf, "{d:.1}", .{d}) else "null";
+    const download_str = if (download_mbps) |d| try std.fmt.bufPrint(&download_buf, "{d:.0}", .{d}) else "null";
     const ping_str = if (ping_ms) |p| try std.fmt.bufPrint(&ping_buf, "{d:.1}", .{p}) else "null";
-    const upload_str = if (upload_mbps) |u| try std.fmt.bufPrint(&upload_buf, "{d:.1}", .{u}) else "null";
+    const upload_str = if (upload_mbps) |u| try std.fmt.bufPrint(&upload_buf, "{d:.0}", .{u}) else "null";
     const error_str = if (error_message) |e| try std.fmt.bufPrint(&error_buf, "\"{s}\"", .{e}) else "null";
 
     try stdout.print("{{\"download_mbps\": {s}, \"ping_ms\": {s}, \"upload_mbps\": {s}, \"error\": {s}}}\n", .{ download_str, ping_str, upload_str, error_str });

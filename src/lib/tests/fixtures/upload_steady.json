@@ -1,0 +1,40 @@
+{
+  "name": "upload_steady_60mbps",
+  "direction": "upload",
+  "criteria": {
+    "min_duration_seconds": 2,
+    "max_duration_seconds": 8,
+    "progress_frequency_ms": 150,
+    "moving_average_window_size": 5,
+    "stability_delta_percent": 2.0,
+    "min_stable_measurements": 6,
+    "connections_min": 1,
+    "connections_max": 8,
+    "max_bytes_in_flight": 78643200
+  },
+  "samples": [
+    { "t_ms": 0, "total_bytes": 0 },
+    { "t_ms": 150, "total_bytes": 1125000 },
+    { "t_ms": 300, "total_bytes": 2250000 },
+    { "t_ms": 450, "total_bytes": 3375000 },
+    { "t_ms": 600, "total_bytes": 4500000 },
+    { "t_ms": 750, "total_bytes": 5625000 },
+    { "t_ms": 900, "total_bytes": 6750000 },
+    { "t_ms": 1050, "total_bytes": 7875000 },
+    { "t_ms": 1200, "total_bytes": 9000000 },
+    { "t_ms": 1350, "total_bytes": 10125000 },
+    { "t_ms": 1500, "total_bytes": 11250000 },
+    { "t_ms": 1650, "total_bytes": 12375000 },
+    { "t_ms": 1800, "total_bytes": 13500000 },
+    { "t_ms": 1950, "total_bytes": 14625000 },
+    { "t_ms": 2100, "total_bytes": 15750000 },
+    { "t_ms": 2250, "total_bytes": 16875000 },
+    { "t_ms": 2400, "total_bytes": 18000000 }
+  ],
+  "expected": {
+    "stop_at_ms": 2100,
+    "speed_mbps": 60.0,
+    "speed_tolerance_mbps": 2.0,
+    "stable": true
+  }
+}

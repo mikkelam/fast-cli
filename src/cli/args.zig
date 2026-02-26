@@ -8,6 +8,14 @@ const BOLD = "\x1b[1m";
 const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
+pub const duration_default_seconds: u32 = 30;
+pub const duration_min_seconds: u32 = 7;
+pub const duration_max_seconds: u32 = 30;
+
+pub fn clampDurationSeconds(value: u32) u32 {
+    return @min(duration_max_seconds, @max(value, duration_min_seconds));
+}
+
 pub const Args = struct {
     https: bool,
     upload: bool,
@@ -25,15 +33,15 @@ pub const Args = struct {
     }
 };
 
-const params = clap.parseParamsComptime(
+const params = clap.parseParamsComptime(std.fmt.comptimePrint(
     \\-h, --help              Display this help and exit.
     \\    --https             Use HTTPS when connecting to fast.com (default)
     \\    --no-https          Use HTTP instead of HTTPS
     \\-u, --upload            Check upload speed as well
     \\-j, --json              Output results in JSON format
-    \\-d, --duration <usize>  Maximum test duration in seconds (default: 30)
+    \\-d, --duration <usize>  Maximum test duration in seconds (effective range: {d}-{d}, default: {d})
     \\
-);
+, .{ duration_min_seconds, duration_max_seconds, duration_default_seconds }));
 
 const parsers = .{
     .usize = clap.parsers.int(u32, 10),
@@ -56,7 +64,7 @@ pub fn parse(allocator: Allocator) !Args {
         .https = if (res.args.@"no-https" != 0) false else true,
         .upload = res.args.upload != 0,
         .json = res.args.json != 0,
-        .duration = res.args.duration orelse 30,
+        .duration = res.args.duration orelse duration_default_seconds,
         .help = res.args.help != 0,
         .allocator = allocator,
         .clap_result = res,

@@ -1,0 +1,45 @@
+{
+  "name": "download_bursty_then_stable",
+  "direction": "download",
+  "criteria": {
+    "min_duration_seconds": 2,
+    "max_duration_seconds": 8,
+    "progress_frequency_ms": 150,
+    "moving_average_window_size": 5,
+    "stability_delta_percent": 2.0,
+    "min_stable_measurements": 6,
+    "connections_min": 1,
+    "connections_max": 8,
+    "max_bytes_in_flight": 78643200
+  },
+  "samples": [
+    { "t_ms": 0, "total_bytes": 0 },
+    { "t_ms": 150, "total_bytes": 750000 },
+    { "t_ms": 300, "total_bytes": 4500000 },
+    { "t_ms": 450, "total_bytes": 6000000 },
+    { "t_ms": 600, "total_bytes": 9000000 },
+    { "t_ms": 750, "total_bytes": 11250000 },
+    { "t_ms": 900, "total_bytes": 13500000 },
+    { "t_ms": 1050, "total_bytes": 15750000 },
+    { "t_ms": 1200, "total_bytes": 18000000 },
+    { "t_ms": 1350, "total_bytes": 20250000 },
+    { "t_ms": 1500, "total_bytes": 22500000 },
+    { "t_ms": 1650, "total_bytes": 24750000 },
+    { "t_ms": 1800, "total_bytes": 27000000 },
+    { "t_ms": 1950, "total_bytes": 29250000 },
+    { "t_ms": 2100, "total_bytes": 31500000 },
+    { "t_ms": 2250, "total_bytes": 33750000 },
+    { "t_ms": 2400, "total_bytes": 36000000 },
+    { "t_ms": 2550, "total_bytes": 38250000 },
+    { "t_ms": 2700, "total_bytes": 40500000 },
+    { "t_ms": 2850, "total_bytes": 42750000 },
+    { "t_ms": 3000, "total_bytes": 45000000 },
+    { "t_ms": 3150, "total_bytes": 47250000 }
+  ],
+  "expected": {
+    "stop_at_ms": 2100,
+    "speed_mbps": 120.0,
+    "speed_tolerance_mbps": 6.0,
+    "stable": true
+  }
+}

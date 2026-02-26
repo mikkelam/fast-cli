@@ -66,6 +66,25 @@ pub const WorkerManager = struct {
         timer_interface: speed_worker.Timer,
         target_duration: u64,
     ) ![]speed_worker.DownloadWorker {
+        return self.setupDownloadWorkersWithControl(
+            urls,
+            concurrent_connections,
+            timer_interface,
+            target_duration,
+            null,
+            0,
+        );
+    }
+
+    pub fn setupDownloadWorkersWithControl(
+        self: *Self,
+        urls: []const []const u8,
+        concurrent_connections: usize,
+        timer_interface: speed_worker.Timer,
+        target_duration: u64,
+        active_worker_count: ?*std.atomic.Value(u32),
+        max_bytes_in_flight: u64,
+    ) ![]speed_worker.DownloadWorker {
         const num_workers = calculateWorkerCount(urls, concurrent_connections);
         std.debug.assert(num_workers == self.http_clients.len);
 
@@ -80,9 +99,11 @@ pub const WorkerManager = struct {
             worker.* = speed_worker.DownloadWorker.init(
                 config,
                 self.should_stop,
+                active_worker_count,
                 self.http_clients[i].httpClient(),
                 timer_interface,
                 target_duration,
+                max_bytes_in_flight,
                 self.allocator,
             );
         }
@@ -99,6 +120,27 @@ pub const WorkerManager = struct {
         target_duration: u64,
         upload_data: []const u8,
     ) ![]speed_worker.UploadWorker {
+        return self.setupUploadWorkersWithControl(
+            urls,
+            concurrent_connections,
+            timer_interface,
+            target_duration,
+            upload_data,
+            null,
+            0,
+        );
+    }
+
+    pub fn setupUploadWorkersWithControl(
+        self: *Self,
+        urls: []const []const u8,
+        concurrent_connections: usize,
+        timer_interface: speed_worker.Timer,
+        target_duration: u64,
+        upload_data: []const u8,
+        active_worker_count: ?*std.atomic.Value(u32),
+        max_bytes_in_flight: u64,
+    ) ![]speed_worker.UploadWorker {
         const num_workers = calculateWorkerCount(urls, concurrent_connections);
         std.debug.assert(num_workers == self.http_clients.len);
 
@@ -113,10 +155,12 @@ pub const WorkerManager = struct {
             worker.* = speed_worker.UploadWorker.init(
                 config,
                 self.should_stop,
+                active_worker_count,
                 self.http_clients[i].httpClient(),
                 timer_interface,
                 target_duration,
                 upload_data,
+                max_bytes_in_flight,
                 self.allocator,
             );
         }

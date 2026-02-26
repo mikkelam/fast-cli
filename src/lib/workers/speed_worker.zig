@@ -38,10 +38,13 @@ pub const Header = struct {
 pub const FetchResponse = struct {
     status: http.Status,
     body: []const u8,
+    byte_count: usize,
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *FetchResponse) void {
-        self.allocator.free(self.body);
+        if (self.body.len > 0) {
+            self.allocator.free(self.body);
+        }
     }
 };
 
@@ -72,9 +75,11 @@ pub const DownloadWorker = struct {
     config: WorkerConfig,
     bytes_downloaded: std.atomic.Value(u64),
     should_stop: *std.atomic.Value(bool),
+    active_worker_count: ?*std.atomic.Value(u32),
     http_client: HttpClient,
     timer: Timer,
     target_duration_ns: u64,
+    max_bytes_in_flight: u64,
     allocator: std.mem.Allocator,
     error_count: std.atomic.Value(u32),
     // Dynamic chunk sizing
@@ -90,18 +95,22 @@ pub const DownloadWorker = struct {
     pub fn init(
         config: WorkerConfig,
         should_stop: *std.atomic.Value(bool),
+        active_worker_count: ?*std.atomic.Value(u32),
         http_client: HttpClient,
         timer: Timer,
         target_duration_ns: u64,
+        max_bytes_in_flight: u64,
         allocator: std.mem.Allocator,
     ) Self {
         return Self{
             .config = config,
             .bytes_downloaded = std.atomic.Value(u64).init(0),
             .should_stop = should_stop,
+            .active_worker_count = active_worker_count,
             .http_client = http_client,
             .timer = timer,
             .target_duration_ns = target_duration_ns,
+            .max_bytes_in_flight = max_bytes_in_flight,
             .allocator = allocator,
             .error_count = std.atomic.Value(u32).init(0),
             .current_chunk_size = MIN_CHUNK_SIZE,
@@ -122,6 +131,11 @@ pub const DownloadWorker = struct {
         var retry_count: u32 = 0;
 
         while (!self.should_stop.load(.monotonic)) {
+            if (!self.isActiveWorker()) {
+                std.Thread.sleep(std.time.ns_per_ms * 5);
+                continue;
+            }
+
             // Check if we've exceeded the target duration
             if (self.timer.read() >= self.target_duration_ns) {
                 self.should_stop.store(true, .monotonic);
@@ -134,7 +148,7 @@ pub const DownloadWorker = struct {
             }
 
             // Use dynamic chunk size
-            const chunk_size = self.current_chunk_size;
+            const chunk_size = @min(self.current_chunk_size, self.chunkSizeCapFromInFlight());
             const range_end = @min(range_start + chunk_size - 1, MAX_FILE_SIZE - 1);
 
             // Convert speedtest URL to range URL
@@ -188,10 +202,10 @@ pub const DownloadWorker = struct {
             }
 
             // Update total bytes downloaded
-            _ = self.bytes_downloaded.fetchAdd(response.body.len, .monotonic);
+            _ = self.bytes_downloaded.fetchAdd(response.byte_count, .monotonic);
 
             // Dynamically adjust chunk size based on performance
-            self.adjustChunkSize(request_duration_ns, response.body.len);
+            self.adjustChunkSize(request_duration_ns, response.byte_count);
             range_start += chunk_size;
 
             // Small delay between requests
@@ -224,6 +238,27 @@ pub const DownloadWorker = struct {
         _ = bytes_downloaded; // Suppress unused parameter warning
     }
 
+    fn isActiveWorker(self: *Self) bool {
+        if (self.active_worker_count) |count| {
+            return self.config.worker_id < count.load(.monotonic);
+        }
+        return true;
+    }
+
+    fn chunkSizeCapFromInFlight(self: *Self) u32 {
+        if (self.active_worker_count == null or self.max_bytes_in_flight == 0) {
+            return self.max_chunk_size;
+        }
+
+        const active_count = @max(self.active_worker_count.?.load(.monotonic), 1);
+        const per_worker_cap = self.max_bytes_in_flight / active_count;
+        const bounded = @min(
+            @as(u64, self.max_chunk_size),
+            @max(@as(u64, self.min_chunk_size), per_worker_cap),
+        );
+        return @intCast(bounded);
+    }
+
     pub fn getBytesDownloaded(self: *const Self) u64 {
         return self.bytes_downloaded.load(.monotonic);
     }
@@ -238,10 +273,12 @@ pub const UploadWorker = struct {
     config: WorkerConfig,
     bytes_uploaded: std.atomic.Value(u64),
     should_stop: *std.atomic.Value(bool),
+    active_worker_count: ?*std.atomic.Value(u32),
     http_client: HttpClient,
     timer: Timer,
     target_duration_ns: u64,
     upload_data: []const u8,
+    max_bytes_in_flight: u64,
     allocator: std.mem.Allocator,
     error_count: std.atomic.Value(u32),
     // Dynamic upload sizing
@@ -256,20 +293,24 @@ pub const UploadWorker = struct {
     pub fn init(
         config: WorkerConfig,
         should_stop: *std.atomic.Value(bool),
+        active_worker_count: ?*std.atomic.Value(u32),
         http_client: HttpClient,
         timer: Timer,
         target_duration_ns: u64,
         upload_data: []const u8,
+        max_bytes_in_flight: u64,
         allocator: std.mem.Allocator,
     ) Self {
         return Self{
             .config = config,
             .bytes_uploaded = std.atomic.Value(u64).init(0),
             .should_stop = should_stop,
+            .active_worker_count = active_worker_count,
             .http_client = http_client,
             .timer = timer,
             .target_duration_ns = target_duration_ns,
             .upload_data = upload_data,
+            .max_bytes_in_flight = max_bytes_in_flight,
             .allocator = allocator,
             .error_count = std.atomic.Value(u32).init(0),
             .current_upload_size = MIN_UPLOAD_SIZE,
@@ -289,6 +330,11 @@ pub const UploadWorker = struct {
         var retry_count: u32 = 0;
 
         while (!self.should_stop.load(.monotonic)) {
+            if (!self.isActiveWorker()) {
+                std.Thread.sleep(std.time.ns_per_ms * 5);
+                continue;
+            }
+
             // Check if we've exceeded the target duration
             if (self.timer.read() >= self.target_duration_ns) {
                 self.should_stop.store(true, .monotonic);
@@ -296,7 +342,10 @@ pub const UploadWorker = struct {
             }
 
             // Use dynamic upload size
-            const upload_size = @min(self.current_upload_size, self.upload_data.len);
+            const upload_size = @min(
+                @min(self.current_upload_size, self.upload_data.len),
+                self.uploadSizeCapFromInFlight(),
+            );
             const upload_chunk = self.upload_data[0..upload_size];
 
             const start_time = self.timer.read();
@@ -368,6 +417,27 @@ pub const UploadWorker = struct {
         _ = bytes_uploaded; // Suppress unused parameter warning
     }
 
+    fn isActiveWorker(self: *Self) bool {
+        if (self.active_worker_count) |count| {
+            return self.config.worker_id < count.load(.monotonic);
+        }
+        return true;
+    }
+
+    fn uploadSizeCapFromInFlight(self: *Self) u32 {
+        if (self.active_worker_count == null or self.max_bytes_in_flight == 0) {
+            return self.max_upload_size;
+        }
+
+        const active_count = @max(self.active_worker_count.?.load(.monotonic), 1);
+        const per_worker_cap = self.max_bytes_in_flight / active_count;
+        const bounded = @min(
+            @as(u64, self.max_upload_size),
+            @max(@as(u64, self.min_upload_size), per_worker_cap),
+        );
+        return @intCast(bounded);
+    }
+
     pub fn getBytesUploaded(self: *const Self) u64 {
         return self.bytes_uploaded.load(.monotonic);
     }
@@ -404,21 +474,22 @@ pub const RealHttpClient = struct {
     fn fetch(ptr: *anyopaque, request: FetchRequest) !FetchResponse {
         const self: *Self = @ptrCast(@alignCast(ptr));
 
-        var response_body = std.Io.Writer.Allocating.init(self.allocator);
-        errdefer response_body.deinit();
+        var writer_buffer: [1024]u8 = undefined;
+        var discarding = std.Io.Writer.Discarding.init(&writer_buffer);
 
         const fetch_options = http.Client.FetchOptions{
             .method = request.method,
             .location = .{ .url = request.url },
             .payload = if (request.payload) |p| p else null,
-            .response_writer = &response_body.writer,
+            .response_writer = &discarding.writer,
         };
 
         const result = try self.client.fetch(fetch_options);
 
         return FetchResponse{
             .status = result.status,
-            .body = try response_body.toOwnedSlice(),
+            .body = &.{},
+            .byte_count = @intCast(discarding.fullCount()),
             .allocator = self.allocator,
         };
     }
@@ -485,6 +556,7 @@ pub const MockHttpClient = struct {
         try self.responses.append(self.allocator, FetchResponse{
             .status = status,
             .body = body_copy,
+            .byte_count = body_copy.len,
             .allocator = self.allocator,
         });
     }
@@ -524,6 +596,7 @@ pub const MockHttpClient = struct {
         return FetchResponse{
             .status = response.status,
             .body = body_copy,
+            .byte_count = body_copy.len,
             .allocator = self.allocator,
         };
     }
@@ -586,9 +659,10 @@ test "DownloadWorker basic functionality" {
 
     var mock_timer = MockTimer.init();
     var should_stop = std.atomic.Value(bool).init(false);
+    var active_workers = std.atomic.Value(u32).init(1);
 
     const config = WorkerConfig{
-        .worker_id = 1,
+        .worker_id = 0,
         .url = "https://example.com/test",
         .chunk_size = 1024,
         .delay_between_requests_ms = 0,
@@ -597,9 +671,11 @@ test "DownloadWorker basic functionality" {
     var worker = DownloadWorker.init(
         config,
         &should_stop,
+        &active_workers,
         mock_client.httpClient(),
         mock_timer.timer_interface(),
         std.time.ns_per_s * 2, // 2 second target
+        0,
         allocator,
     );
 
@@ -633,9 +709,10 @@ test "DownloadWorker handles errors gracefully" {
 
     var mock_timer = MockTimer.init();
     var should_stop = std.atomic.Value(bool).init(false);
+    var active_workers = std.atomic.Value(u32).init(1);
 
     const config = WorkerConfig{
-        .worker_id = 1,
+        .worker_id = 0,
         .url = "https://example.com/test",
         .max_retries = 2,
     };
@@ -643,9 +720,11 @@ test "DownloadWorker handles errors gracefully" {
     var worker = DownloadWorker.init(
         config,
         &should_stop,
+        &active_workers,
         mock_client.httpClient(),
         mock_timer.timer_interface(),
         std.time.ns_per_s, // 1 second target
+        0,
         allocator,
     );
 
