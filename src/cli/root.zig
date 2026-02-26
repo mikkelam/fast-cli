@@ -21,11 +21,12 @@ pub fn run(allocator: std.mem.Allocator) !void {
         return;
     }
 
-    log.info("Config: https={}, upload={}, json={}, max_duration={}s", .{
+    log.info("Config: https={}, upload={}, json={}, max_duration={}s, connections_max={}", .{
         args.https,
         args.upload,
         args.json,
         args.duration,
+        args.connections_max,
     });
 
     var spinner = Spinner.init(allocator, .{});
@@ -78,12 +79,15 @@ pub fn run(allocator: std.mem.Allocator) !void {
     defer speed_tester.deinit();
 
     const criteria = StabilityCriteria{
-        .ramp_up_duration_seconds = 4,
-        .max_duration_seconds = @as(u32, @intCast(@min(25, args.duration))),
-        .measurement_interval_ms = 750,
-        .sliding_window_size = 6,
-        .stability_threshold_cov = 0.15,
-        .stable_checks_required = 2,
+        .min_duration_seconds = 7,
+        .max_duration_seconds = @as(u32, @intCast(@min(@as(u32, 30), @max(args.duration, @as(u32, 7))))),
+        .progress_frequency_ms = 150,
+        .moving_average_window_size = 5,
+        .stability_delta_percent = 2.0,
+        .min_stable_measurements = 6,
+        .connections_min = 1,
+        .connections_max = @max(args.connections_max, @as(u32, 1)),
+        .max_bytes_in_flight = 78_643_200,
     };
 
     const download_result = if (args.json) blk: {

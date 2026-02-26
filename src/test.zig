@@ -9,5 +9,6 @@ test "all" {
 
     // Dedicated test modules
     _ = @import("lib/tests/measurement_strategy_test.zig");
+    _ = @import("lib/tests/parity_fixture_test.zig");
     _ = @import("lib/tests/worker_manager_test.zig");
 }
