@@ -10,12 +10,10 @@ pub const std_options: std.Options = .{
 
 pub fn main() !void {
     var dbg = std.heap.DebugAllocator(.{}).init;
-
     const allocator = switch (@import("builtin").mode) {
         .Debug => dbg.allocator(),
         .ReleaseFast, .ReleaseSafe, .ReleaseSmall => std.heap.smp_allocator,
     };
-
     defer if (@import("builtin").mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
 
     try cli.run(allocator);

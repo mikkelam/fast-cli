@@ -37,7 +37,7 @@
     { "t_ms": 3150, "total_bytes": 47250000 }
   ],
   "expected": {
-    "stop_at_ms": 2400,
+    "stop_at_ms": 2100,
     "speed_mbps": 120.0,
     "speed_tolerance_mbps": 6.0,
     "stable": true

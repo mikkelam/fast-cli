@@ -320,6 +320,7 @@ pub const HTTPSpeedTester = struct {
 
         var timer = try speed_worker.RealTimer.init();
         var should_stop = std.atomic.Value(bool).init(false);
+        var last_emitted_progress_speed_bits_per_sec: ?f64 = null;
 
         const max_workers = self.effectiveMaxWorkers(urls.len, strategy.criteria);
         var active_worker_count = std.atomic.Value(u32).init(initialActiveWorkers(max_workers, strategy.criteria));
@@ -358,7 +359,8 @@ pub const HTTPSpeedTester = struct {
             }
 
             if (has_progress) {
-                progress_callback.call(speedMeasurementFromBitsPerSecond(decision.speed_bits_per_sec));
+                progress_callback.call(speedMeasurementFromBitsPerSecond(decision.display_speed_bits_per_sec));
+                last_emitted_progress_speed_bits_per_sec = decision.display_speed_bits_per_sec;
             }
 
             if (decision.should_stop) {
@@ -378,7 +380,10 @@ pub const HTTPSpeedTester = struct {
         }
 
         const actual_duration_ns = timer.timer_interface().read();
-        const speed_bits_per_sec = strategy.finalSpeedBitsPerSecond(totals.bytes, actual_duration_ns);
+        const speed_bits_per_sec = if (has_progress and last_emitted_progress_speed_bits_per_sec != null)
+            last_emitted_progress_speed_bits_per_sec.?
+        else
+            strategy.finalSpeedBitsPerSecond(totals.bytes, actual_duration_ns);
 
         if (trace_capture) |trace| {
             if (trace.stop_at_ms == 0) {
@@ -405,6 +410,7 @@ pub const HTTPSpeedTester = struct {
 
         var timer = try speed_worker.RealTimer.init();
         var should_stop = std.atomic.Value(bool).init(false);
+        var last_emitted_progress_speed_bits_per_sec: ?f64 = null;
 
         const max_workers = self.effectiveMaxWorkers(urls.len, strategy.criteria);
         var active_worker_count = std.atomic.Value(u32).init(initialActiveWorkers(max_workers, strategy.criteria));
@@ -444,7 +450,8 @@ pub const HTTPSpeedTester = struct {
             }
 
             if (has_progress) {
-                progress_callback.call(speedMeasurementFromBitsPerSecond(decision.speed_bits_per_sec));
+                progress_callback.call(speedMeasurementFromBitsPerSecond(decision.display_speed_bits_per_sec));
+                last_emitted_progress_speed_bits_per_sec = decision.display_speed_bits_per_sec;
             }
 
             if (decision.should_stop) {
@@ -464,7 +471,10 @@ pub const HTTPSpeedTester = struct {
         }
 
         const actual_duration_ns = timer.timer_interface().read();
-        const speed_bits_per_sec = strategy.finalSpeedBitsPerSecond(totals.bytes, actual_duration_ns);
+        const speed_bits_per_sec = if (has_progress and last_emitted_progress_speed_bits_per_sec != null)
+            last_emitted_progress_speed_bits_per_sec.?
+        else
+            strategy.finalSpeedBitsPerSecond(totals.bytes, actual_duration_ns);
 
         if (trace_capture) |trace| {
             if (trace.stop_at_ms == 0) {

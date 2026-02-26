@@ -21,9 +21,17 @@ pub const ProgressMeasurement = struct {
     speed_bits_per_sec: f64,
 };
 
+pub const EstimationPhase = enum {
+    ramp,
+    steady,
+};
+
 pub const StabilityDecision = struct {
     should_stop: bool,
     desired_connections: u32,
+    phase: EstimationPhase,
+    display_speed_bits_per_sec: f64,
+    authoritative_speed_bits_per_sec: f64,
     speed_bits_per_sec: f64,
     sampled: bool = false,
 };
@@ -192,6 +200,7 @@ pub const StabilityStrategy = struct {
     criteria: StabilityCriteria,
     min_duration_ns: u64,
     max_duration_ns: u64,
+    ramp_min_duration_ns: u64,
     measurement_interval_ns: u64,
     snapshots: std.ArrayList(ProgressSnapshot),
     progress_measurements: std.ArrayList(ProgressMeasurement),
@@ -199,19 +208,34 @@ pub const StabilityStrategy = struct {
     stopper: StableDeltaStopper,
     last_sample_time_ns: u64 = 0,
     last_total_bytes: u64 = 0,
-    current_speed_bits_per_sec: f64 = 0,
+    phase: EstimationPhase = .ramp,
+    provisional_speed_bits_per_sec: f64 = 0,
+    authoritative_speed_bits_per_sec: f64 = 0,
+    steady_total_bytes: u64 = 0,
+    steady_total_time_ns: u64 = 0,
+    ramp_max_desired_connections: u32 = 1,
+    ramp_ticks_without_increase: u32 = 0,
+    locked_connections: u32 = 1,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, criteria: StabilityCriteria) StabilityStrategy {
+        const min_duration_ns = @as(u64, criteria.min_duration_seconds) * std.time.ns_per_s;
+        const max_duration_ns = @as(u64, criteria.max_duration_seconds) * std.time.ns_per_s;
+        const ramp_min_duration_ns = @min(2 * std.time.ns_per_s, min_duration_ns);
+        const min_connections = @max(criteria.connections_min, 1);
+
         return .{
             .criteria = criteria,
-            .min_duration_ns = @as(u64, criteria.min_duration_seconds) * std.time.ns_per_s,
-            .max_duration_ns = @as(u64, criteria.max_duration_seconds) * std.time.ns_per_s,
+            .min_duration_ns = min_duration_ns,
+            .max_duration_ns = max_duration_ns,
+            .ramp_min_duration_ns = @min(ramp_min_duration_ns, max_duration_ns),
             .measurement_interval_ns = criteria.progress_frequency_ms * std.time.ns_per_ms,
             .snapshots = std.ArrayList(ProgressSnapshot).empty,
             .progress_measurements = std.ArrayList(ProgressMeasurement).empty,
             .moving_average = StableMovingAverage.init(criteria.moving_average_window_size),
             .stopper = StableDeltaStopper.init(criteria),
+            .ramp_max_desired_connections = min_connections,
+            .locked_connections = min_connections,
             .allocator = allocator,
         };
     }
@@ -230,14 +254,51 @@ pub const StabilityStrategy = struct {
     }
 
     pub fn getCurrentSpeedBitsPerSec(self: StabilityStrategy) f64 {
-        return self.current_speed_bits_per_sec;
+        return if (self.phase == .steady and self.authoritative_speed_bits_per_sec > 0)
+            self.authoritative_speed_bits_per_sec
+        else
+            self.provisional_speed_bits_per_sec;
+    }
+
+    fn updateRampState(self: *StabilityStrategy, desired_connections: u32) void {
+        if (desired_connections > self.ramp_max_desired_connections) {
+            self.ramp_max_desired_connections = desired_connections;
+            self.ramp_ticks_without_increase = 0;
+        } else {
+            self.ramp_ticks_without_increase += 1;
+        }
+    }
+
+    fn shouldEnterSteadyPhase(self: *const StabilityStrategy, current_time_ns: u64) bool {
+        const ramp_lock_ticks_required: u32 = 3;
+        if (self.ramp_ticks_without_increase < ramp_lock_ticks_required) return false;
+
+        const max_connections = @max(self.criteria.connections_max, self.criteria.connections_min);
+        const ramp_reached_max = self.ramp_max_desired_connections >= max_connections;
+        const ramp_time_elapsed = current_time_ns >= self.ramp_min_duration_ns;
+        return ramp_reached_max or ramp_time_elapsed;
+    }
+
+    fn updateSteadyEstimator(self: *StabilityStrategy, bytes_diff: u64, elapsed_ns: u64) void {
+        self.steady_total_bytes += bytes_diff;
+        self.steady_total_time_ns += elapsed_ns;
+        if (self.steady_total_time_ns == 0) return;
+
+        const duration_s = @as(f64, @floatFromInt(self.steady_total_time_ns)) / std.time.ns_per_s;
+        if (duration_s == 0) return;
+        self.authoritative_speed_bits_per_sec = @as(f64, @floatFromInt(self.steady_total_bytes)) * 8.0 / duration_s;
     }
 
     pub fn handleProgress(self: *StabilityStrategy, current_time_ns: u64, current_total_bytes: u64) !StabilityDecision {
+        const initial_display_speed = self.getCurrentSpeedBitsPerSec();
+        const initial_desired = if (self.phase == .steady) self.locked_connections else @max(self.criteria.connections_min, 1);
         var decision = StabilityDecision{
             .should_stop = false,
-            .desired_connections = desiredConnections(self.criteria, self.current_speed_bits_per_sec),
-            .speed_bits_per_sec = self.current_speed_bits_per_sec,
+            .desired_connections = initial_desired,
+            .phase = self.phase,
+            .display_speed_bits_per_sec = initial_display_speed,
+            .authoritative_speed_bits_per_sec = initial_display_speed,
+            .speed_bits_per_sec = initial_display_speed,
             .sampled = false,
         };
 
@@ -269,17 +330,46 @@ pub const StabilityStrategy = struct {
             .time_ms = time_ms,
         });
 
-        self.current_speed_bits_per_sec = self.moving_average.compute(self.snapshots.items);
-        try self.progress_measurements.append(self.allocator, .{
-            .speed_bits_per_sec = self.current_speed_bits_per_sec,
-        });
+        self.provisional_speed_bits_per_sec = self.moving_average.compute(self.snapshots.items);
+        const provisional_desired = desiredConnections(self.criteria, self.provisional_speed_bits_per_sec);
 
-        decision.speed_bits_per_sec = self.current_speed_bits_per_sec;
-        decision.desired_connections = desiredConnections(self.criteria, self.current_speed_bits_per_sec);
+        if (self.phase == .ramp) {
+            self.updateRampState(provisional_desired);
+            if (self.shouldEnterSteadyPhase(current_time_ns)) {
+                self.phase = .steady;
+                self.locked_connections = self.ramp_max_desired_connections;
+                self.steady_total_bytes = 0;
+                self.steady_total_time_ns = 0;
+                self.authoritative_speed_bits_per_sec = 0;
+            }
+        }
+
+        if (self.phase == .steady) {
+            self.updateSteadyEstimator(bytes_diff, elapsed_ns);
+            try self.progress_measurements.append(self.allocator, .{
+                .speed_bits_per_sec = self.authoritative_speed_bits_per_sec,
+            });
+        }
+
+        const display_speed = if (self.phase == .steady and self.authoritative_speed_bits_per_sec > 0)
+            self.authoritative_speed_bits_per_sec
+        else
+            self.provisional_speed_bits_per_sec;
+        const authoritative_speed = if (self.authoritative_speed_bits_per_sec > 0)
+            self.authoritative_speed_bits_per_sec
+        else
+            self.provisional_speed_bits_per_sec;
+        const desired_connections = if (self.phase == .steady) self.locked_connections else provisional_desired;
+
+        decision.phase = self.phase;
+        decision.display_speed_bits_per_sec = display_speed;
+        decision.authoritative_speed_bits_per_sec = authoritative_speed;
+        decision.speed_bits_per_sec = display_speed;
+        decision.desired_connections = desired_connections;
         decision.should_stop = self.stopper.shouldStop(
             current_time_ns,
             self.progress_measurements.items,
-            self.current_speed_bits_per_sec,
+            authoritative_speed,
         );
         decision.sampled = true;
 
@@ -290,8 +380,11 @@ pub const StabilityStrategy = struct {
     }
 
     pub fn finalSpeedBitsPerSecond(self: *const StabilityStrategy, total_bytes: u64, duration_ns: u64) f64 {
-        if (self.current_speed_bits_per_sec > 0) {
-            return self.current_speed_bits_per_sec;
+        if (self.authoritative_speed_bits_per_sec > 0) {
+            return self.authoritative_speed_bits_per_sec;
+        }
+        if (self.provisional_speed_bits_per_sec > 0) {
+            return self.provisional_speed_bits_per_sec;
         }
         if (duration_ns == 0) return 0;
         const duration_s = @as(f64, @floatFromInt(duration_ns)) / std.time.ns_per_s;

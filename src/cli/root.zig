@@ -32,7 +32,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     var spinner = Spinner.init(allocator, .{});
     defer spinner.deinit();
 
-    var fast = Fast.init(std.heap.smp_allocator, args.https);
+    var fast = Fast.init(allocator, args.https);
     defer fast.deinit();
 
     const urls = fast.get_urls(5) catch |err| {
@@ -54,7 +54,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     }
 
     // Measure latency
-    var latency_tester = HttpLatencyTester.init(std.heap.smp_allocator);
+    var latency_tester = HttpLatencyTester.init(allocator);
     defer latency_tester.deinit();
 
     const latency_ms = if (!args.json) blk: {
@@ -71,11 +71,11 @@ pub fn run(allocator: std.mem.Allocator) !void {
 
     if (!args.json) {
         log.info("Measuring download speed...", .{});
-        try spinner.start("Measuring download speed...", .{});
+        try spinner.start("⬇️ 0.0 Mbps", .{});
     }
 
     // Initialize speed tester
-    var speed_tester = HTTPSpeedTester.init(std.heap.smp_allocator);
+    var speed_tester = HTTPSpeedTester.init(allocator);
     defer speed_tester.deinit();
 
     const criteria = StabilityCriteria{
@@ -91,8 +91,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     };
 
     const download_result = if (args.json) blk: {
-        break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch |err| {
-            try spinner.fail("Download test failed: {}", .{err});
+        break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch {
             try outputJson(null, null, null, "Download test failed");
             return;
         };
@@ -102,21 +101,18 @@ pub fn run(allocator: std.mem.Allocator) !void {
             try spinner.fail("Download test failed: {}", .{err});
             return;
         };
-        spinner.stop();
         break :blk result;
     };
 
     var upload_result: ?SpeedTestResult = null;
     if (args.upload) {
         if (!args.json) {
-            spinner.stop();
             log.info("Measuring upload speed...", .{});
-            try spinner.start("Measuring upload speed...", .{});
+            try spinner.updateMessage("⬆️ 0.0 Mbps", .{});
         }
 
         upload_result = if (args.json) blk: {
-            break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch |err| {
-                try spinner.fail("Upload test failed: {}", .{err});
+            break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch {
                 try outputJson(download_result.speed.value, latency_ms, null, "Upload test failed");
                 return;
             };
@@ -126,7 +122,6 @@ pub fn run(allocator: std.mem.Allocator) !void {
                 try spinner.fail("Upload test failed: {}", .{err});
                 return;
             };
-            spinner.stop();
             break :blk result;
         };
     }
