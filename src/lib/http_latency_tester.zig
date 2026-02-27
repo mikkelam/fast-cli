@@ -128,22 +128,44 @@ test "calculateMedian" {
     try testing.expectEqual(@as(f64, 15.0), median_single);
 }
 
-test "HttpLatencyTester integration with example.com" {
+test "HttpLatencyTester integration with local HTTP server" {
+    const addr = try std.net.Address.parseIp4("127.0.0.1", 0);
+    var server = try addr.listen(.{ .reuse_address = true });
+    defer server.deinit();
+
+    const server_thread = try std.Thread.spawn(.{}, serveSingleHeadRequest, .{&server});
+    defer server_thread.join();
+
+    const port = server.listen_address.getPort();
+    var url_buf: [128]u8 = undefined;
+    const url = try std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/latency", .{port});
+
     var tester = HttpLatencyTester.init(testing.allocator);
     defer tester.deinit();
 
-    // Test with real HTTP endpoint
-    const urls = [_][]const u8{"https://example.com"};
-    const result = tester.measureLatency(&urls) catch |err| {
-        // Allow network errors in CI environments
-        std.log.warn("Network error in integration test (expected in CI): {}", .{err});
-        return;
-    };
+    const urls = [_][]const u8{url};
+    const result = try tester.measureLatency(&urls);
 
     if (result) |latency_ms| {
-        // Reasonable latency bounds (1ms to 5000ms)
-        try testing.expect(latency_ms >= 1.0);
-        try testing.expect(latency_ms <= 5000.0);
-        std.log.info("example.com latency: {d:.1}ms", .{latency_ms});
+        try testing.expect(latency_ms >= 0.0);
+        // Loopback should be very fast; keep bound generous for loaded CI runners.
+        try testing.expect(latency_ms <= 1000.0);
+    } else {
+        return error.TestUnexpectedResult;
     }
+}
+
+fn serveSingleHeadRequest(server: *std.net.Server) void {
+    const connection = server.accept() catch return;
+    defer connection.stream.close();
+
+    var read_buf: [1024]u8 = undefined;
+    _ = connection.stream.read(&read_buf) catch return;
+
+    const response =
+        "HTTP/1.1 200 OK\r\n" ++
+        "Content-Length: 0\r\n" ++
+        "Connection: close\r\n" ++
+        "\r\n";
+    connection.stream.writeAll(response) catch return;
 }
