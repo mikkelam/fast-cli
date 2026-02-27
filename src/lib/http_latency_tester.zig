@@ -53,19 +53,18 @@ pub const HttpLatencyTester = struct {
     fn measureSingleUrl(self: *Self, url: []const u8, client: *http.Client) !f64 {
         _ = self;
 
-        // Explicitly discard any response bytes to avoid relying on implicit fetch storage.
-        // This mirrors the worker HTTP path, which is stable across environments.
-        var writer_buffer: [1024]u8 = undefined;
-        var discarding = std.Io.Writer.Discarding.init(&writer_buffer);
+        const uri = try std.Uri.parse(url);
+        var redirect_buffer: [1024]u8 = undefined;
+        var req = try client.request(.HEAD, uri, .{
+            .keep_alive = false,
+            .redirect_behavior = .unhandled,
+        });
+        defer req.deinit();
 
         // Measure request/response timing
         const start_time = std.time.nanoTimestamp();
-
-        _ = try client.fetch(.{
-            .method = .HEAD,
-            .location = .{ .url = url },
-            .response_writer = &discarding.writer,
-        });
+        try req.sendBodiless();
+        _ = try req.receiveHead(&redirect_buffer);
 
         const end_time = std.time.nanoTimestamp();
 
