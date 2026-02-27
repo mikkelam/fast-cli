@@ -7,7 +7,7 @@ const Spinner = @This();
 const frames = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
 const WriterType = union(enum) {
-    file: std.fs.File.Writer,
+    file: void,
     test_writer: std.Io.Writer,
 };
 
@@ -45,10 +45,9 @@ pub fn init(allocator: Allocator, options: Options) Spinner {
     spinner.should_stop = std.atomic.Value(bool).init(true);
 
     if (options.writer) |w| {
-        spinner.writer_buffer = undefined;
         spinner.writer = w;
     } else {
-        spinner.writer = .{ .file = std.fs.File.stderr().writer(&spinner.writer_buffer) };
+        spinner.writer = .{ .file = {} };
     }
 
     return spinner;
@@ -67,9 +66,10 @@ pub fn start(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     setMessage(self, fmt, args);
 
     switch (self.writer) {
-        .file => |*w| {
-            w.interface.writeAll(HIDE_CURSOR) catch {};
-            w.interface.flush() catch {};
+        .file => {
+            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            writer.interface.writeAll(HIDE_CURSOR) catch {};
+            writer.interface.flush() catch {};
         },
         .test_writer => |*w| {
             w.writeAll(HIDE_CURSOR) catch {};
@@ -90,9 +90,10 @@ pub fn stop(self: *Spinner) void {
     }
 
     switch (self.writer) {
-        .file => |*w| {
-            w.interface.writeAll(CLEAR_LINE ++ SHOW_CURSOR) catch {};
-            w.interface.flush() catch {};
+        .file => {
+            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            writer.interface.writeAll(CLEAR_LINE ++ SHOW_CURSOR) catch {};
+            writer.interface.flush() catch {};
         },
         .test_writer => |*w| {
             w.writeAll(CLEAR_LINE ++ SHOW_CURSOR) catch {};
@@ -115,9 +116,10 @@ pub fn succeed(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     self.mutex.unlock();
 
     switch (self.writer) {
-        .file => |*w| {
-            try w.interface.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
-            try w.interface.flush();
+        .file => {
+            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            try writer.interface.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
+            try writer.interface.flush();
         },
         .test_writer => |*w| {
             try w.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
@@ -134,9 +136,10 @@ pub fn fail(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     self.mutex.unlock();
 
     switch (self.writer) {
-        .file => |*w| {
-            try w.interface.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
-            try w.interface.flush();
+        .file => {
+            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            try writer.interface.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
+            try writer.interface.flush();
         },
         .test_writer => |*w| {
             try w.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
@@ -151,9 +154,10 @@ fn spinLoop(self: *Spinner) void {
         self.mutex.lock();
         const msg = self.message_buf[0..self.message_len];
         switch (self.writer) {
-            .file => |*w| {
-                w.interface.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
-                w.interface.flush() catch {};
+            .file => {
+                var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+                writer.interface.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
+                writer.interface.flush() catch {};
             },
             .test_writer => |*w| {
                 w.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
