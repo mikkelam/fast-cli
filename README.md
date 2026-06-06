@@ -36,7 +36,9 @@ curl -sSL https://raw.githubusercontent.com/mikkelam/fast-cli/main/install.sh | 
 `install.sh` currently supports Linux and macOS only (not Windows yet).
 
 ### Pre-built Binaries
-For example, on an Apple Silicon Mac:
+Try it from [Nixpkgs](https://nixos.org) with `nix shell nixpkgs#fast-cli-zig` 
+
+or get a pre-built binary for example, on an Apple Silicon Mac:
 ```bash
 curl -L https://github.com/mikkelam/fast-cli/releases/latest/download/fast-cli-aarch64-macos.tar.gz -o fast-cli.tar.gz
 tar -xzf fast-cli.tar.gz
