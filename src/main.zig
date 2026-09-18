@@ -1,5 +1,6 @@
 const std = @import("std");
 const cli = @import("cli/root.zig");
+const terminal = @import("lib/terminal.zig");
 
 pub const std_options: std.Options = .{
     .log_level = switch (@import("builtin").mode) {
@@ -9,6 +10,8 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
+    terminal.installInterruptHandler();
+
     var dbg = std.heap.DebugAllocator(.{}).init;
     const allocator = switch (@import("builtin").mode) {
         .Debug => dbg.allocator(),
