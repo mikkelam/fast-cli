@@ -9,15 +9,7 @@ pub const std_options: std.Options = .{
     },
 };
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     terminal.installInterruptHandler();
-
-    var dbg = std.heap.DebugAllocator(.{}).init;
-    const allocator = switch (@import("builtin").mode) {
-        .Debug => dbg.allocator(),
-        .ReleaseFast, .ReleaseSafe, .ReleaseSmall => std.heap.smp_allocator,
-    };
-    defer if (@import("builtin").mode == .Debug) std.debug.assert(dbg.deinit() == .ok);
-
-    try cli.run(allocator);
+    try cli.run(init.gpa, init.io, init.minimal.args);
 }

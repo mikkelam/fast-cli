@@ -96,7 +96,7 @@ test "createWorkerConfigs with zero workers" {
 
 test "WorkerManager basic initialization and cleanup" {
     var should_stop = std.atomic.Value(bool).init(false);
-    var manager = try WorkerManager.init(testing.allocator, &should_stop, 3);
+    var manager = try WorkerManager.init(testing.allocator, testing.io, &should_stop, 3);
     defer manager.deinit();
 
     try testing.expect(manager.http_clients.len == 3);
@@ -106,7 +106,7 @@ test "WorkerManager basic initialization and cleanup" {
 
 test "WorkerManager initialization with zero workers" {
     var should_stop = std.atomic.Value(bool).init(false);
-    var manager = try WorkerManager.init(testing.allocator, &should_stop, 0);
+    var manager = try WorkerManager.init(testing.allocator, testing.io, &should_stop, 0);
     defer manager.deinit();
 
     try testing.expect(manager.http_clients.len == 0);
@@ -116,7 +116,7 @@ test "WorkerManager initialization with zero workers" {
 
 test "WorkerManager calculate totals with empty workers" {
     var should_stop = std.atomic.Value(bool).init(false);
-    var manager = try WorkerManager.init(testing.allocator, &should_stop, 0);
+    var manager = try WorkerManager.init(testing.allocator, testing.io, &should_stop, 0);
     defer manager.deinit();
 
     // Test with empty download workers
@@ -134,7 +134,7 @@ test "WorkerManager calculate totals with empty workers" {
 
 test "WorkerManager current bytes with empty workers" {
     var should_stop = std.atomic.Value(bool).init(false);
-    var manager = try WorkerManager.init(testing.allocator, &should_stop, 0);
+    var manager = try WorkerManager.init(testing.allocator, testing.io, &should_stop, 0);
     defer manager.deinit();
 
     // Test with empty download workers
@@ -150,7 +150,7 @@ test "WorkerManager current bytes with empty workers" {
 
 test "WorkerManager clients_initialized flag behavior" {
     var should_stop = std.atomic.Value(bool).init(false);
-    var manager = try WorkerManager.init(testing.allocator, &should_stop, 2);
+    var manager = try WorkerManager.init(testing.allocator, testing.io, &should_stop, 2);
     defer manager.deinit();
 
     // Should start as false

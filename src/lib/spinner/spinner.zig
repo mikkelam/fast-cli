@@ -25,23 +25,25 @@ const RED = "\x1b[31m";
 const RESET = "\x1b[0m";
 
 allocator: Allocator,
+io: std.Io,
 message_buf: [256]u8 = undefined,
 message_len: usize = 0,
 writer_buffer: [4096]u8,
 writer: WriterType,
 thread: ?Thread = null,
-mutex: Thread.Mutex = .{},
+mutex: std.Io.Mutex = .init,
 should_stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
 refresh_rate_ms: u64,
 
-pub fn init(allocator: Allocator, options: Options) Spinner {
+pub fn init(allocator: Allocator, io: std.Io, options: Options) Spinner {
     var spinner: Spinner = undefined;
     spinner.allocator = allocator;
+    spinner.io = io;
     spinner.refresh_rate_ms = options.refresh_rate_ms;
     spinner.message_buf = [_]u8{0} ** 256;
     spinner.message_len = 0;
     spinner.thread = null;
-    spinner.mutex = .{};
+    spinner.mutex = .init;
     spinner.should_stop = std.atomic.Value(bool).init(true);
 
     if (options.writer) |w| {
@@ -60,14 +62,14 @@ pub fn deinit(self: *Spinner) void {
 pub fn start(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     self.stop();
 
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.mutex.lockUncancelable(self.io);
+    defer self.mutex.unlock(self.io);
 
     setMessage(self, fmt, args);
 
     switch (self.writer) {
         .file => {
-            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            var writer = std.Io.File.stderr().writer(self.io, &self.writer_buffer);
             writer.interface.writeAll(HIDE_CURSOR) catch {};
             writer.interface.flush() catch {};
         },
@@ -91,7 +93,7 @@ pub fn stop(self: *Spinner) void {
 
     switch (self.writer) {
         .file => {
-            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            var writer = std.Io.File.stderr().writer(self.io, &self.writer_buffer);
             writer.interface.writeAll(CLEAR_LINE ++ SHOW_CURSOR) catch {};
             writer.interface.flush() catch {};
         },
@@ -102,22 +104,22 @@ pub fn stop(self: *Spinner) void {
 }
 
 pub fn updateMessage(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    self.mutex.lockUncancelable(self.io);
+    defer self.mutex.unlock(self.io);
     setMessage(self, fmt, args);
 }
 
 pub fn succeed(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     self.stop();
 
-    self.mutex.lock();
+    self.mutex.lockUncancelable(self.io);
     const msg = try std.fmt.allocPrint(self.allocator, fmt, args);
     defer self.allocator.free(msg);
-    self.mutex.unlock();
+    self.mutex.unlock(self.io);
 
     switch (self.writer) {
         .file => {
-            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            var writer = std.Io.File.stderr().writer(self.io, &self.writer_buffer);
             try writer.interface.print(GREEN ++ "✔" ++ RESET ++ " {s}\n", .{msg});
             try writer.interface.flush();
         },
@@ -130,14 +132,14 @@ pub fn succeed(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
 pub fn fail(self: *Spinner, comptime fmt: []const u8, args: anytype) !void {
     self.stop();
 
-    self.mutex.lock();
+    self.mutex.lockUncancelable(self.io);
     const msg = try std.fmt.allocPrint(self.allocator, fmt, args);
     defer self.allocator.free(msg);
-    self.mutex.unlock();
+    self.mutex.unlock(self.io);
 
     switch (self.writer) {
         .file => {
-            var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+            var writer = std.Io.File.stderr().writer(self.io, &self.writer_buffer);
             try writer.interface.print(RED ++ "✖" ++ RESET ++ " {s}\n", .{msg});
             try writer.interface.flush();
         },
@@ -151,11 +153,11 @@ fn spinLoop(self: *Spinner) void {
     var frame_idx: usize = 0;
 
     while (!self.should_stop.load(.acquire)) {
-        self.mutex.lock();
+        self.mutex.lockUncancelable(self.io);
         const msg = self.message_buf[0..self.message_len];
         switch (self.writer) {
             .file => {
-                var writer = std.fs.File.stderr().writer(&self.writer_buffer);
+                var writer = std.Io.File.stderr().writer(self.io, &self.writer_buffer);
                 writer.interface.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
                 writer.interface.flush() catch {};
             },
@@ -163,10 +165,10 @@ fn spinLoop(self: *Spinner) void {
                 w.print(CLEAR_LINE ++ "{s} {s}", .{ frames[frame_idx], msg }) catch {};
             },
         }
-        self.mutex.unlock();
+        self.mutex.unlock(self.io);
 
         frame_idx = (frame_idx + 1) % frames.len;
-        Thread.sleep(self.refresh_rate_ms * std.time.ns_per_ms);
+        self.io.sleep(.fromMilliseconds(@intCast(self.refresh_rate_ms)), .awake) catch {};
     }
 }
 
@@ -196,11 +198,11 @@ test "spinner outputs hide cursor on start" {
     var buffer: [4096]u8 = undefined;
     const test_writer = std.Io.Writer.fixed(&buffer);
 
-    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
+    var spinner = Spinner.init(testing.allocator, testing.io, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
     try spinner.start("Processing", .{});
-    Thread.sleep(50 * std.time.ns_per_ms);
+    try testing.io.sleep(.fromMilliseconds(50), .awake);
     spinner.stop();
 
     const output = getTestOutput(&spinner);
@@ -213,11 +215,11 @@ test "spinner outputs show cursor on stop" {
     var buffer: [4096]u8 = undefined;
     const test_writer = std.Io.Writer.fixed(&buffer);
 
-    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
+    var spinner = Spinner.init(testing.allocator, testing.io, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
     try spinner.start("Loading", .{});
-    Thread.sleep(50 * std.time.ns_per_ms);
+    try testing.io.sleep(.fromMilliseconds(50), .awake);
     spinner.stop();
 
     const output = getTestOutput(&spinner);
@@ -230,11 +232,11 @@ test "spinner outputs message and frames" {
     var buffer: [4096]u8 = undefined;
     const test_writer = std.Io.Writer.fixed(&buffer);
 
-    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer }, .refresh_rate_ms = 30 });
+    var spinner = Spinner.init(testing.allocator, testing.io, .{ .writer = .{ .test_writer = test_writer }, .refresh_rate_ms = 30 });
     defer spinner.deinit();
 
     try spinner.start("Loading {s}", .{"data"});
-    Thread.sleep(150 * std.time.ns_per_ms);
+    try testing.io.sleep(.fromMilliseconds(150), .awake);
     spinner.stop();
 
     const output = getTestOutput(&spinner);
@@ -248,11 +250,11 @@ test "spinner succeed outputs green checkmark" {
     var buffer: [4096]u8 = undefined;
     const test_writer = std.Io.Writer.fixed(&buffer);
 
-    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
+    var spinner = Spinner.init(testing.allocator, testing.io, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
     try spinner.start("Working", .{});
-    Thread.sleep(50 * std.time.ns_per_ms);
+    try testing.io.sleep(.fromMilliseconds(50), .awake);
     try spinner.succeed("Done", .{});
 
     const output = getTestOutput(&spinner);
@@ -267,11 +269,11 @@ test "spinner fail outputs red cross" {
     var buffer: [4096]u8 = undefined;
     const test_writer = std.Io.Writer.fixed(&buffer);
 
-    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
+    var spinner = Spinner.init(testing.allocator, testing.io, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
     try spinner.start("Working", .{});
-    Thread.sleep(50 * std.time.ns_per_ms);
+    try testing.io.sleep(.fromMilliseconds(50), .awake);
     try spinner.fail("Error occurred", .{});
 
     const output = getTestOutput(&spinner);
@@ -286,13 +288,13 @@ test "spinner updateMessage changes displayed text" {
     var buffer: [4096]u8 = undefined;
     const test_writer = std.Io.Writer.fixed(&buffer);
 
-    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer }, .refresh_rate_ms = 30 });
+    var spinner = Spinner.init(testing.allocator, testing.io, .{ .writer = .{ .test_writer = test_writer }, .refresh_rate_ms = 30 });
     defer spinner.deinit();
 
     try spinner.start("Step 1", .{});
-    Thread.sleep(100 * std.time.ns_per_ms);
+    try testing.io.sleep(.fromMilliseconds(100), .awake);
     try spinner.updateMessage("Step 2", .{});
-    Thread.sleep(100 * std.time.ns_per_ms);
+    try testing.io.sleep(.fromMilliseconds(100), .awake);
     spinner.stop();
 
     const output = getTestOutput(&spinner);
@@ -302,7 +304,7 @@ test "spinner updateMessage changes displayed text" {
 
 test "spinner can stop without starting" {
     const testing = std.testing;
-    var spinner = Spinner.init(testing.allocator, .{});
+    var spinner = Spinner.init(testing.allocator, testing.io, .{});
     defer spinner.deinit();
 
     spinner.stop();
@@ -315,12 +317,12 @@ test "spinner multiple start/stop cycles work" {
     var buffer: [4096]u8 = undefined;
     const test_writer = std.Io.Writer.fixed(&buffer);
 
-    var spinner = Spinner.init(testing.allocator, .{ .writer = .{ .test_writer = test_writer } });
+    var spinner = Spinner.init(testing.allocator, testing.io, .{ .writer = .{ .test_writer = test_writer } });
     defer spinner.deinit();
 
     for (0..3) |i| {
         try spinner.start("Cycle {d}", .{i});
-        Thread.sleep(50 * std.time.ns_per_ms);
+        testing.io.sleep(.fromMilliseconds(50), .awake) catch {};
         spinner.stop();
     }
 

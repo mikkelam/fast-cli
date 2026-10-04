@@ -4,12 +4,14 @@ const log = std.log.scoped(.cli);
 
 pub const HttpLatencyTester = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) Self {
         return Self{
             .allocator = allocator,
+            .io = io,
         };
     }
 
@@ -24,11 +26,11 @@ pub const HttpLatencyTester = struct {
     pub fn measureLatency(self: *Self, urls: []const []const u8) !?f64 {
         if (urls.len == 0) return null;
 
-        var latencies: std.ArrayList(f64) = .{};
+        var latencies: std.ArrayList(f64) = .empty;
         defer latencies.deinit(self.allocator);
 
         // HTTP client for all requests
-        var client = http.Client{ .allocator = self.allocator };
+        var client = http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
 
         // Test each URL
@@ -51,8 +53,6 @@ pub const HttpLatencyTester = struct {
 
     /// Measure latency to a single URL using HEAD request
     fn measureSingleUrl(self: *Self, url: []const u8, client: *http.Client) !f64 {
-        _ = self;
-
         const uri = try std.Uri.parse(url);
         var redirect_buffer: [1024]u8 = undefined;
         var req = try client.request(.HEAD, uri, .{
@@ -62,14 +62,14 @@ pub const HttpLatencyTester = struct {
         defer req.deinit();
 
         // Measure request/response timing
-        const start_time = std.time.nanoTimestamp();
+        const start_time = std.Io.Timestamp.now(self.io, .awake);
         try req.sendBodiless();
         _ = try req.receiveHead(&redirect_buffer);
 
-        const end_time = std.time.nanoTimestamp();
+        const end_time = std.Io.Timestamp.now(self.io, .awake);
 
         // Convert to milliseconds
-        const latency_ns = end_time - start_time;
+        const latency_ns = start_time.durationTo(end_time).toNanoseconds();
         const latency_ms = @as(f64, @floatFromInt(latency_ns)) / std.time.ns_per_ms;
 
         return latency_ms;
@@ -99,7 +99,7 @@ pub const HttpLatencyTester = struct {
 const testing = std.testing;
 
 test "HttpLatencyTester init/deinit" {
-    var tester = HttpLatencyTester.init(testing.allocator);
+    var tester = HttpLatencyTester.init(testing.allocator, testing.io);
     defer tester.deinit();
 
     // Test with empty URLs
@@ -108,7 +108,7 @@ test "HttpLatencyTester init/deinit" {
 }
 
 test "calculateMedian" {
-    var tester = HttpLatencyTester.init(testing.allocator);
+    var tester = HttpLatencyTester.init(testing.allocator, testing.io);
     defer tester.deinit();
 
     // Test odd number of elements
@@ -128,18 +128,18 @@ test "calculateMedian" {
 }
 
 test "HttpLatencyTester integration with local HTTP server" {
-    const addr = try std.net.Address.parseIp4("127.0.0.1", 0);
-    var server = try addr.listen(.{ .reuse_address = true });
-    defer server.deinit();
+    const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(0) };
+    var server = try addr.listen(testing.io, .{ .reuse_address = true });
+    defer server.deinit(testing.io);
 
-    const server_thread = try std.Thread.spawn(.{}, serveSingleHeadRequest, .{&server});
+    const server_thread = try std.Thread.spawn(.{}, serveSingleHeadRequest, .{ &server, testing.io });
     defer server_thread.join();
 
-    const port = server.listen_address.getPort();
+    const port = server.socket.address.getPort();
     var url_buf: [128]u8 = undefined;
     const url = try std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/latency", .{port});
 
-    var tester = HttpLatencyTester.init(testing.allocator);
+    var tester = HttpLatencyTester.init(testing.allocator, testing.io);
     defer tester.deinit();
 
     const urls = [_][]const u8{url};
@@ -154,17 +154,21 @@ test "HttpLatencyTester integration with local HTTP server" {
     }
 }
 
-fn serveSingleHeadRequest(server: *std.net.Server) void {
-    const connection = server.accept() catch return;
-    defer connection.stream.close();
+fn serveSingleHeadRequest(server: *std.Io.net.Server, io: std.Io) void {
+    const stream = server.accept(io) catch return;
+    defer stream.close(io);
 
     var read_buf: [1024]u8 = undefined;
-    _ = connection.stream.read(&read_buf) catch return;
+    var reader = stream.reader(io, &read_buf);
+    _ = reader.interface.takeDelimiterInclusive('\n') catch return;
 
     const response =
         "HTTP/1.1 200 OK\r\n" ++
         "Content-Length: 0\r\n" ++
         "Connection: close\r\n" ++
         "\r\n";
-    connection.stream.writeAll(response) catch return;
+    var write_buf: [256]u8 = undefined;
+    var writer = stream.writer(io, &write_buf);
+    writer.interface.writeAll(response) catch return;
+    writer.interface.flush() catch return;
 }

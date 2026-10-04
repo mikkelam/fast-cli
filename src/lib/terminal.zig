@@ -16,10 +16,10 @@ pub fn installInterruptHandler() void {
     std.posix.sigaction(std.posix.SIG.INT, &action, null);
 }
 
-fn handleInterrupt(signal: i32) callconv(.c) void {
-    _ = std.posix.write(std.posix.STDERR_FILENO, RESTORE_TERMINAL) catch {};
+fn handleInterrupt(signal: std.posix.SIG) callconv(.c) void {
+    _ = std.posix.system.write(std.posix.STDERR_FILENO, RESTORE_TERMINAL.ptr, RESTORE_TERMINAL.len);
 
-    const status: u8 = @intCast(128 + signal);
+    const status: u8 = @intCast(128 + @intFromEnum(signal));
     if (builtin.link_libc) std.c._exit(status);
-    std.posix.exit(status);
+    std.posix.system.exit(status);
 }

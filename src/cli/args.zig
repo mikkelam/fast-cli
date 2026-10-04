@@ -47,14 +47,14 @@ const parsers = .{
     .usize = clap.parsers.int(u32, 10),
 };
 
-pub fn parse(allocator: Allocator) !Args {
+pub fn parse(allocator: Allocator, io: std.Io, process_args: std.process.Args) !Args {
     var diag = clap.Diagnostic{};
-    const res = clap.parse(clap.Help, &params, parsers, .{
+    const res = clap.parse(clap.Help, &params, parsers, process_args, .{
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
         var stderr_buffer: [4096]u8 = undefined;
-        var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+        var stderr_writer = std.Io.File.stderr().writer(io, &stderr_buffer);
         const stderr = &stderr_writer.interface;
         try diag.report(stderr, err);
         return err;
@@ -71,9 +71,9 @@ pub fn parse(allocator: Allocator) !Args {
     };
 }
 
-pub fn printHelp() !void {
+pub fn printHelp(io: std.Io) !void {
     var stderr_buffer: [4096]u8 = undefined;
-    var stderr_writer = std.fs.File.stderr().writerStreaming(&stderr_buffer);
+    var stderr_writer = std.Io.File.stderr().writerStreaming(io, &stderr_buffer);
     const stderr = &stderr_writer.interface;
     try stderr.print(BOLD ++ "fast-cli" ++ RESET ++ " v{s} - Estimate connection speed using fast.com\n\n", .{build_options.version});
     try stderr.writeAll(YELLOW ++ "USAGE:\n" ++ RESET);

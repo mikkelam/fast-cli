@@ -40,10 +40,10 @@ pub const Fast = struct {
     arena: std.heap.ArenaAllocator,
     use_https: bool,
 
-    pub fn init(allocator: std.mem.Allocator, use_https: bool) Fast {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, use_https: bool) Fast {
         const arena = std.heap.ArenaAllocator.init(allocator);
         return Fast{
-            .client = http.Client{ .allocator = allocator },
+            .client = http.Client{ .allocator = allocator, .io = io },
             .arena = arena,
             .use_https = use_https,
         };
@@ -163,24 +163,20 @@ pub const Fast = struct {
             .response_writer = &response_body.writer,
             // .response_storage = .{ .dynamic = &response_body },
         }) catch |err| switch (err) {
-            error.NetworkUnreachable, error.ConnectionRefused => {
+            error.NetworkUnreachable, error.NetworkDown, error.HostUnreachable, error.ConnectionRefused => {
                 log.err("Failed to reach fast.com servers (network/connection error) for URL: {s}", .{url});
                 return error.ConnectionTimeout;
             },
-            error.UnknownHostName, error.NameServerFailure, error.TemporaryNameServerFailure, error.HostLacksNetworkAddresses => {
+            error.UnknownHostName, error.NameServerFailure, error.NoAddressReturned => {
                 log.err("Failed to resolve fast.com hostname (DNS/internet connection issue) for URL: {s}", .{url});
                 return error.ConnectionTimeout;
             },
-            error.ConnectionTimedOut, error.ConnectionResetByPeer => {
+            error.Timeout, error.ConnectionResetByPeer => {
                 log.err("Connection to fast.com servers timed out or was reset for URL: {s}", .{url});
                 return error.ConnectionTimeout;
             },
             error.TlsInitializationFailed => {
                 log.err("Failed to establish secure connection to fast.com servers for URL: {s}", .{url});
-                return error.ConnectionTimeout;
-            },
-            error.UnexpectedConnectFailure => {
-                log.err("Unexpected connection failure to fast.com servers for URL: {s}", .{url});
                 return error.ConnectionTimeout;
             },
             else => {

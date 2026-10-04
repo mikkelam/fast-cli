@@ -12,12 +12,12 @@ const SpeedMeasurement = @import("../lib/bandwidth.zig").SpeedMeasurement;
 const progress = @import("../lib/progress.zig");
 const HttpLatencyTester = @import("../lib/http_latency_tester.zig").HttpLatencyTester;
 
-pub fn run(allocator: std.mem.Allocator) !void {
-    var args = try Args.parse(allocator);
+pub fn run(allocator: std.mem.Allocator, io: std.Io, process_args: std.process.Args) !void {
+    var args = try Args.parse(allocator, io, process_args);
     defer args.deinit();
 
     if (args.help) {
-        try Args.printHelp();
+        try Args.printHelp(io);
         return;
     }
 
@@ -28,10 +28,10 @@ pub fn run(allocator: std.mem.Allocator) !void {
         args.duration,
     });
 
-    var spinner = Spinner.init(allocator, .{});
+    var spinner = Spinner.init(allocator, io, .{});
     defer spinner.deinit();
 
-    var fast = Fast.init(allocator, args.https);
+    var fast = Fast.init(allocator, io, args.https);
     defer fast.deinit();
 
     const urls = fast.get_urls(5) catch |err| {
@@ -42,7 +42,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
                 error.ConnectionTimeout => "Failed to contact fast.com servers",
                 else => "Failed to get URLs",
             };
-            try outputJson(null, null, null, error_msg);
+            try outputJson(io, null, null, null, error_msg);
         }
         return;
     };
@@ -53,7 +53,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     }
 
     // Measure latency
-    var latency_tester = HttpLatencyTester.init(allocator);
+    var latency_tester = HttpLatencyTester.init(allocator, io);
     defer latency_tester.deinit();
 
     const latency_ms = if (!args.json) blk: {
@@ -74,7 +74,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
     }
 
     // Initialize speed tester
-    var speed_tester = HTTPSpeedTester.init(allocator);
+    var speed_tester = HTTPSpeedTester.init(allocator, io);
     defer speed_tester.deinit();
 
     const criteria = StabilityCriteria{
@@ -90,7 +90,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
 
     const download_result = if (args.json) blk: {
         break :blk speed_tester.measure_download_speed_stability(urls, criteria) catch {
-            try outputJson(null, null, null, "Download test failed");
+            try outputJson(io, null, null, null, "Download test failed");
             return;
         };
     } else blk: {
@@ -111,7 +111,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
 
         upload_result = if (args.json) blk: {
             break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch {
-                try outputJson(download_result.speed.value, latency_ms, null, "Upload test failed");
+                try outputJson(io, download_result.speed.value, latency_ms, null, "Upload test failed");
                 return;
             };
         } else blk: {
@@ -141,7 +141,7 @@ pub fn run(allocator: std.mem.Allocator) !void {
         }
     } else {
         const upload_speed = if (upload_result) |up| up.speed.value else null;
-        try outputJson(download_result.speed.value, latency_ms, upload_speed, null);
+        try outputJson(io, download_result.speed.value, latency_ms, upload_speed, null);
     }
 }
 
@@ -153,9 +153,9 @@ fn updateUploadSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) voi
     spinner.updateMessage("⬆️ {d:.0} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
-fn outputJson(download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_message: ?[]const u8) !void {
+fn outputJson(io: std.Io, download_mbps: ?f64, ping_ms: ?f64, upload_mbps: ?f64, error_message: ?[]const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writerStreaming(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writerStreaming(io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
 
     var download_buf: [32]u8 = undefined;

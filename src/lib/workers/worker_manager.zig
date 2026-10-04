@@ -24,6 +24,7 @@ pub fn createWorkerConfigs(allocator: std.mem.Allocator, urls: []const []const u
 
 pub const WorkerManager = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     should_stop: *std.atomic.Value(bool),
     http_clients: []speed_worker.RealHttpClient,
     threads: []std.Thread,
@@ -31,7 +32,7 @@ pub const WorkerManager = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, should_stop: *std.atomic.Value(bool), num_workers: usize) !Self {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, should_stop: *std.atomic.Value(bool), num_workers: usize) !Self {
         const http_clients = try allocator.alloc(speed_worker.RealHttpClient, num_workers);
         errdefer allocator.free(http_clients);
 
@@ -40,6 +41,7 @@ pub const WorkerManager = struct {
 
         return Self{
             .allocator = allocator,
+            .io = io,
             .should_stop = should_stop,
             .http_clients = http_clients,
             .threads = threads,
@@ -94,9 +96,10 @@ pub const WorkerManager = struct {
 
         // Initialize HTTP clients and workers
         for (workers, configs, 0..) |*worker, config, i| {
-            self.http_clients[i] = speed_worker.RealHttpClient.init(self.allocator);
+            self.http_clients[i] = speed_worker.RealHttpClient.init(self.allocator, self.io);
 
             worker.* = speed_worker.DownloadWorker.init(
+                self.io,
                 config,
                 self.should_stop,
                 active_worker_count,
@@ -150,9 +153,10 @@ pub const WorkerManager = struct {
 
         // Initialize HTTP clients and workers
         for (workers, configs, 0..) |*worker, config, i| {
-            self.http_clients[i] = speed_worker.RealHttpClient.init(self.allocator);
+            self.http_clients[i] = speed_worker.RealHttpClient.init(self.allocator, self.io);
 
             worker.* = speed_worker.UploadWorker.init(
+                self.io,
                 config,
                 self.should_stop,
                 active_worker_count,

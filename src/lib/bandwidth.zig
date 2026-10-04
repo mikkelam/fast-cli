@@ -23,16 +23,17 @@ pub const SpeedMeasurement = struct {
 };
 
 pub const BandwidthMeter = struct {
+    io: std.Io,
     _bytes_transferred: u64 = 0,
-    _timer: std.time.Timer = undefined,
+    _started_at: std.Io.Timestamp = .zero,
     _started: bool = false,
 
-    pub fn init() BandwidthMeter {
-        return .{};
+    pub fn init(io: std.Io) BandwidthMeter {
+        return .{ .io = io };
     }
 
-    pub fn start(self: *BandwidthMeter) !void {
-        self._timer = try std.time.Timer.start();
+    pub fn start(self: *BandwidthMeter) void {
+        self._started_at = .now(self.io, .awake);
         self._started = true;
     }
 
@@ -44,7 +45,7 @@ pub const BandwidthMeter = struct {
     pub fn bandwidth(self: *BandwidthMeter) f64 {
         if (!self._started) return 0;
 
-        const delta_nanos = self._timer.read();
+        const delta_nanos = self._started_at.untilNow(self.io, .awake).toNanoseconds();
         const delta_secs = @as(f64, @floatFromInt(delta_nanos)) / std.time.ns_per_s;
 
         return @as(f64, @floatFromInt(self._bytes_transferred)) / delta_secs;
@@ -77,20 +78,20 @@ pub const BandwidthMeter = struct {
 const testing = std.testing;
 
 test "BandwidthMeter init" {
-    const meter = BandwidthMeter.init();
+    const meter = BandwidthMeter.init(testing.io);
     try testing.expect(!meter._started);
     try testing.expectEqual(@as(u64, 0), meter._bytes_transferred);
 }
 
 test "BandwidthMeter start" {
-    var meter = BandwidthMeter.init();
-    try meter.start();
+    var meter = BandwidthMeter.init(testing.io);
+    meter.start();
     try testing.expect(meter._started);
 }
 
 test "BandwidthMeter record_bytes" {
-    var meter = BandwidthMeter.init();
-    try meter.start();
+    var meter = BandwidthMeter.init(testing.io);
+    meter.start();
 
     meter.update_total(1000);
     meter.update_total(1500);
@@ -101,33 +102,33 @@ test "BandwidthMeter record_bytes" {
 }
 
 test "BandwidthMeter bandwidth calculation" {
-    var meter = BandwidthMeter.init();
-    try meter.start();
+    var meter = BandwidthMeter.init(testing.io);
+    meter.start();
 
     meter.update_total(1000); // 1000 bytes
 
     // Sleep briefly to ensure time passes
-    std.Thread.sleep(std.time.ns_per_ms * 10); // 10ms
+    try testing.io.sleep(.fromMilliseconds(10), .awake);
 
     const bw = meter.bandwidth();
     try testing.expect(bw > 0);
 }
 
 test "BandwidthMeter not started errors" {
-    var meter = BandwidthMeter.init();
+    var meter = BandwidthMeter.init(testing.io);
 
     // Should return 0 bandwidth when not started
     try testing.expectEqual(@as(f64, 0), meter.bandwidth());
 }
 
 test "BandwidthMeter unit conversion" {
-    var meter = BandwidthMeter.init();
-    try meter.start();
+    var meter = BandwidthMeter.init(testing.io);
+    meter.start();
 
     // Test different speed ranges
     meter._bytes_transferred = 1000;
-    meter._timer = try std.time.Timer.start();
-    std.Thread.sleep(std.time.ns_per_s); // 1 second
+    meter._started_at = .now(testing.io, .awake);
+    try testing.io.sleep(.fromSeconds(1), .awake);
 
     const measurement = meter.bandwidthWithUnits();
 

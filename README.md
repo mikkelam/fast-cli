@@ -1,6 +1,6 @@
 # fast-cli
 
-[![Zig](https://img.shields.io/badge/Zig-0.15.2-orange?logo=zig)](https://ziglang.org/)
+[![Zig](https://img.shields.io/badge/Zig-0.16.0-orange?logo=zig)](https://ziglang.org/)
 [![CI](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mikkelam/fast-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 

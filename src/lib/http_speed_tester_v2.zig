@@ -67,12 +67,14 @@ fn speedMeasurementFromBitsPerSecond(bits_per_second: f64) SpeedMeasurement {
 
 pub const HTTPSpeedTester = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     concurrent_connections: u32,
     progress_update_interval_ms: u32,
 
-    pub fn init(allocator: std.mem.Allocator) HTTPSpeedTester {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) HTTPSpeedTester {
         return .{
             .allocator = allocator,
+            .io = io,
             .concurrent_connections = 8,
             .progress_update_interval_ms = 100,
         };
@@ -177,16 +179,16 @@ pub const HTTPSpeedTester = struct {
     ) !SpeedTestResult {
         const has_progress = ProgressType != null;
 
-        var timer = try speed_worker.RealTimer.init();
+        var timer = speed_worker.RealTimer.init(self.io);
         var should_stop = std.atomic.Value(bool).init(false);
 
-        var bandwidth_meter = BandwidthMeter.init();
+        var bandwidth_meter = BandwidthMeter.init(self.io);
         if (has_progress) {
-            try bandwidth_meter.start();
+            bandwidth_meter.start();
         }
 
         const num_workers = @min(urls.len, self.concurrent_connections);
-        var worker_manager = try WorkerManager.init(self.allocator, &should_stop, num_workers);
+        var worker_manager = try WorkerManager.init(self.allocator, self.io, &should_stop, num_workers);
         defer worker_manager.deinit();
 
         const workers = try worker_manager.setupDownloadWorkers(
@@ -200,7 +202,7 @@ pub const HTTPSpeedTester = struct {
         try worker_manager.startDownloadWorkers(workers);
 
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.Thread.sleep(strategy.getSleepInterval());
+            self.io.sleep(.fromNanoseconds(strategy.getSleepInterval()), .awake) catch {};
 
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
@@ -235,16 +237,16 @@ pub const HTTPSpeedTester = struct {
     ) !SpeedTestResult {
         const has_progress = ProgressType != null;
 
-        var timer = try speed_worker.RealTimer.init();
+        var timer = speed_worker.RealTimer.init(self.io);
         var should_stop = std.atomic.Value(bool).init(false);
 
-        var bandwidth_meter = BandwidthMeter.init();
+        var bandwidth_meter = BandwidthMeter.init(self.io);
         if (has_progress) {
-            try bandwidth_meter.start();
+            bandwidth_meter.start();
         }
 
         const num_workers = @min(urls.len, self.concurrent_connections);
-        var worker_manager = try WorkerManager.init(self.allocator, &should_stop, num_workers);
+        var worker_manager = try WorkerManager.init(self.allocator, self.io, &should_stop, num_workers);
         defer worker_manager.deinit();
 
         const workers = try worker_manager.setupUploadWorkers(
@@ -259,7 +261,7 @@ pub const HTTPSpeedTester = struct {
         try worker_manager.startUploadWorkers(workers);
 
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.Thread.sleep(strategy.getSleepInterval());
+            self.io.sleep(.fromNanoseconds(strategy.getSleepInterval()), .awake) catch {};
 
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentUploadBytes(workers);
@@ -318,14 +320,14 @@ pub const HTTPSpeedTester = struct {
         const has_progress = ProgressType != null;
         if (urls.len == 0) return SpeedTestResult.fromBitsPerSecond(0);
 
-        var timer = try speed_worker.RealTimer.init();
+        var timer = speed_worker.RealTimer.init(self.io);
         var should_stop = std.atomic.Value(bool).init(false);
         var last_emitted_progress_speed_bits_per_sec: ?f64 = null;
 
         const max_workers = self.effectiveMaxWorkers(urls.len, strategy.criteria);
         var active_worker_count = std.atomic.Value(u32).init(initialActiveWorkers(max_workers, strategy.criteria));
 
-        var worker_manager = try WorkerManager.init(self.allocator, &should_stop, max_workers);
+        var worker_manager = try WorkerManager.init(self.allocator, self.io, &should_stop, max_workers);
         defer worker_manager.deinit();
 
         const workers = try worker_manager.setupDownloadWorkersWithControl(
@@ -341,7 +343,7 @@ pub const HTTPSpeedTester = struct {
         try worker_manager.startDownloadWorkers(workers);
 
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.Thread.sleep(strategy.getSleepInterval());
+            self.io.sleep(.fromNanoseconds(strategy.getSleepInterval()), .awake) catch {};
 
             const current_time_ns = timer.timer_interface().read();
             const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
@@ -408,14 +410,14 @@ pub const HTTPSpeedTester = struct {
         const has_progress = ProgressType != null;
         if (urls.len == 0) return SpeedTestResult.fromBitsPerSecond(0);
 
-        var timer = try speed_worker.RealTimer.init();
+        var timer = speed_worker.RealTimer.init(self.io);
         var should_stop = std.atomic.Value(bool).init(false);
         var last_emitted_progress_speed_bits_per_sec: ?f64 = null;
 
         const max_workers = self.effectiveMaxWorkers(urls.len, strategy.criteria);
         var active_worker_count = std.atomic.Value(u32).init(initialActiveWorkers(max_workers, strategy.criteria));
 
-        var worker_manager = try WorkerManager.init(self.allocator, &should_stop, max_workers);
+        var worker_manager = try WorkerManager.init(self.allocator, self.io, &should_stop, max_workers);
         defer worker_manager.deinit();
 
         const workers = try worker_manager.setupUploadWorkersWithControl(
@@ -432,7 +434,7 @@ pub const HTTPSpeedTester = struct {
         try worker_manager.startUploadWorkers(workers);
 
         while (strategy.shouldContinue(timer.timer_interface().read())) {
-            std.Thread.sleep(strategy.getSleepInterval());
+            self.io.sleep(.fromNanoseconds(strategy.getSleepInterval()), .awake) catch {};
 
             const current_time_ns = timer.timer_interface().read();
             const current_bytes = worker_manager.getCurrentUploadBytes(workers);

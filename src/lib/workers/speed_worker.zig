@@ -72,6 +72,7 @@ pub const WorkerConfig = struct {
 
 // Download worker
 pub const DownloadWorker = struct {
+    io: std.Io,
     config: WorkerConfig,
     bytes_downloaded: std.atomic.Value(u64),
     should_stop: *std.atomic.Value(bool),
@@ -93,6 +94,7 @@ pub const DownloadWorker = struct {
     const MAX_CHUNK_SIZE: u32 = 4 * 1024 * 1024; // 4MB max
 
     pub fn init(
+        io: std.Io,
         config: WorkerConfig,
         should_stop: *std.atomic.Value(bool),
         active_worker_count: ?*std.atomic.Value(u32),
@@ -103,6 +105,7 @@ pub const DownloadWorker = struct {
         allocator: std.mem.Allocator,
     ) Self {
         return Self{
+            .io = io,
             .config = config,
             .bytes_downloaded = std.atomic.Value(u64).init(0),
             .should_stop = should_stop,
@@ -132,7 +135,7 @@ pub const DownloadWorker = struct {
 
         while (!self.should_stop.load(.monotonic)) {
             if (!self.isActiveWorker()) {
-                std.Thread.sleep(std.time.ns_per_ms * 5);
+                self.io.sleep(.fromMilliseconds(5), .awake) catch {};
                 continue;
             }
 
@@ -183,7 +186,7 @@ pub const DownloadWorker = struct {
                     _ = self.error_count.fetchAdd(1, .monotonic);
                     break;
                 }
-                std.Thread.sleep(std.time.ns_per_ms * 100);
+                self.io.sleep(.fromMilliseconds(100), .awake) catch {};
                 continue;
             };
             defer response.deinit();
@@ -197,7 +200,7 @@ pub const DownloadWorker = struct {
             // Accept both 200 (full content) and 206 (partial content)
             if (response.status != .ok and response.status != .partial_content) {
                 print("Worker {} HTTP error: {}\n", .{ self.config.worker_id, response.status });
-                std.Thread.sleep(std.time.ns_per_ms * 100);
+                self.io.sleep(.fromMilliseconds(100), .awake) catch {};
                 continue;
             }
 
@@ -210,7 +213,7 @@ pub const DownloadWorker = struct {
 
             // Small delay between requests
             if (self.config.delay_between_requests_ms > 0) {
-                std.Thread.sleep(std.time.ns_per_ms * self.config.delay_between_requests_ms);
+                self.io.sleep(.fromMilliseconds(@intCast(self.config.delay_between_requests_ms)), .awake) catch {};
             }
         }
     }
@@ -270,6 +273,7 @@ pub const DownloadWorker = struct {
 
 // Upload worker
 pub const UploadWorker = struct {
+    io: std.Io,
     config: WorkerConfig,
     bytes_uploaded: std.atomic.Value(u64),
     should_stop: *std.atomic.Value(bool),
@@ -291,6 +295,7 @@ pub const UploadWorker = struct {
     const MAX_UPLOAD_SIZE: u32 = 4 * 1024 * 1024; // 4MB max
 
     pub fn init(
+        io: std.Io,
         config: WorkerConfig,
         should_stop: *std.atomic.Value(bool),
         active_worker_count: ?*std.atomic.Value(u32),
@@ -302,6 +307,7 @@ pub const UploadWorker = struct {
         allocator: std.mem.Allocator,
     ) Self {
         return Self{
+            .io = io,
             .config = config,
             .bytes_uploaded = std.atomic.Value(u64).init(0),
             .should_stop = should_stop,
@@ -331,7 +337,7 @@ pub const UploadWorker = struct {
 
         while (!self.should_stop.load(.monotonic)) {
             if (!self.isActiveWorker()) {
-                std.Thread.sleep(std.time.ns_per_ms * 5);
+                self.io.sleep(.fromMilliseconds(5), .awake) catch {};
                 continue;
             }
 
@@ -367,7 +373,7 @@ pub const UploadWorker = struct {
                     _ = self.error_count.fetchAdd(1, .monotonic);
                     break;
                 }
-                std.Thread.sleep(std.time.ns_per_ms * 100);
+                self.io.sleep(.fromMilliseconds(100), .awake) catch {};
                 continue;
             };
             defer response.deinit();
@@ -380,7 +386,7 @@ pub const UploadWorker = struct {
 
             if (response.status != .ok) {
                 print("Upload worker {} HTTP error: {}\n", .{ self.config.worker_id, response.status });
-                std.Thread.sleep(std.time.ns_per_ms * 100);
+                self.io.sleep(.fromMilliseconds(100), .awake) catch {};
                 continue;
             }
 
@@ -454,9 +460,9 @@ pub const RealHttpClient = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) Self {
         return Self{
-            .client = http.Client{ .allocator = allocator },
+            .client = http.Client{ .allocator = allocator, .io = io },
             .allocator = allocator,
         };
     }
@@ -505,13 +511,15 @@ pub const RealHttpClient = struct {
 };
 
 pub const RealTimer = struct {
-    timer: std.time.Timer,
+    io: std.Io,
+    started_at: std.Io.Timestamp,
 
     const Self = @This();
 
-    pub fn init() !Self {
+    pub fn init(io: std.Io) Self {
         return Self{
-            .timer = try std.time.Timer.start(),
+            .io = io,
+            .started_at = .now(io, .awake),
         };
     }
 
@@ -526,13 +534,14 @@ pub const RealTimer = struct {
 
     fn read(ptr: *anyopaque) u64 {
         const self: *Self = @ptrCast(@alignCast(ptr));
-        return self.timer.read();
+        return @intCast(self.started_at.untilNow(self.io, .awake).toNanoseconds());
     }
 };
 
 // Mock implementations for testing
 pub const MockHttpClient = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     responses: std.ArrayList(FetchResponse),
     request_count: std.atomic.Value(u32),
     should_fail: bool = false,
@@ -540,9 +549,10 @@ pub const MockHttpClient = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) Self {
         return Self{
             .allocator = allocator,
+            .io = io,
             .responses = std.ArrayList(FetchResponse).empty,
             .request_count = std.atomic.Value(u32).init(0),
         };
@@ -580,7 +590,7 @@ pub const MockHttpClient = struct {
         _ = request;
 
         if (self.delay_ms > 0) {
-            std.Thread.sleep(std.time.ns_per_ms * self.delay_ms);
+            self.io.sleep(.fromMilliseconds(@intCast(self.delay_ms)), .awake) catch {};
         }
 
         if (self.should_fail) {
@@ -654,7 +664,7 @@ const testing = std.testing;
 test "DownloadWorker basic functionality" {
     const allocator = testing.allocator;
 
-    var mock_client = MockHttpClient.init(allocator);
+    var mock_client = MockHttpClient.init(allocator, testing.io);
     defer mock_client.deinit();
 
     // Add mock responses
@@ -673,6 +683,7 @@ test "DownloadWorker basic functionality" {
     };
 
     var worker = DownloadWorker.init(
+        testing.io,
         config,
         &should_stop,
         &active_workers,
@@ -690,7 +701,7 @@ test "DownloadWorker basic functionality" {
     const thread = try std.Thread.spawn(.{}, DownloadWorker.run, .{&worker});
 
     // Let it run for a bit
-    std.Thread.sleep(std.time.ns_per_ms * 100);
+    try testing.io.sleep(.fromMilliseconds(100), .awake);
 
     // Advance timer to trigger stop
     mock_timer.setTime(std.time.ns_per_s * 3); // 3 seconds
@@ -706,7 +717,7 @@ test "DownloadWorker basic functionality" {
 test "DownloadWorker handles errors gracefully" {
     const allocator = testing.allocator;
 
-    var mock_client = MockHttpClient.init(allocator);
+    var mock_client = MockHttpClient.init(allocator, testing.io);
     defer mock_client.deinit();
 
     mock_client.should_fail = true;
@@ -722,6 +733,7 @@ test "DownloadWorker handles errors gracefully" {
     };
 
     var worker = DownloadWorker.init(
+        testing.io,
         config,
         &should_stop,
         &active_workers,

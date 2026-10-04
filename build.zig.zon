@@ -5,7 +5,7 @@
 
     .fingerprint = 0xfb5a9fbee5075971,
 
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
 
     .dependencies = .{
         .mvzr = .{
@@ -13,8 +13,8 @@
             .hash = "mvzr-0.3.7-ZSOky5FtAQB2VrFQPNbXHQCFJxWTMAYEK7ljYEaMR6jt",
         },
         .clap = .{
-            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.11.0.tar.gz",
-            .hash = "clap-0.11.0-oBajB-HnAQDPCKYzwF7rO3qDFwRcD39Q0DALlTSz5H7e",
+            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.12.0.tar.gz",
+            .hash = "clap-0.12.0-oBajB7foAQDqlSwaSG5g0yq7xGbQARUsBk5T64gAOqP5",
         },
     },
     .paths = .{
