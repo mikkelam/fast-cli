@@ -1,7 +1,7 @@
 const std = @import("std");
 const speed_worker = @import("workers/speed_worker.zig");
 const BandwidthMeter = @import("bandwidth.zig").BandwidthMeter;
-const SpeedMeasurement = @import("bandwidth.zig").SpeedMeasurement;
+const Speed = @import("bandwidth.zig").Speed;
 const WorkerManager = @import("workers/worker_manager.zig").WorkerManager;
 const measurement_strategy = @import("measurement_strategy.zig");
 const DurationStrategy = measurement_strategy.DurationStrategy;
@@ -11,16 +11,24 @@ pub const StabilityCriteria = measurement_strategy.StabilityCriteria;
 const print = std.debug.print;
 
 pub const SpeedTestResult = struct {
-    speed: SpeedMeasurement,
+    speed: Speed,
 
     pub fn fromBytesPerSecond(bytes_per_second: f64) SpeedTestResult {
-        return fromBitsPerSecond(bytes_per_second * 8.0);
+        return .{ .speed = Speed.fromBytesPerSecond(bytes_per_second) };
     }
 
     pub fn fromBitsPerSecond(bits_per_second: f64) SpeedTestResult {
-        return SpeedTestResult{ .speed = speedMeasurementFromBitsPerSecond(bits_per_second) };
+        return .{ .speed = Speed.fromBitsPerSecond(bits_per_second) };
     }
 };
+
+test "SpeedTestResult constructors preserve canonical speed" {
+    const from_bytes = SpeedTestResult.fromBytesPerSecond(312_500_000);
+    const from_bits = SpeedTestResult.fromBitsPerSecond(2_500_000_000);
+
+    try std.testing.expectEqual(@as(f64, 2_500_000_000), from_bytes.speed.bits_per_second);
+    try std.testing.expectEqual(@as(f64, 2_500_000_000), from_bits.speed.bits_per_second);
+}
 
 pub const TraceSample = struct {
     t_ms: u64,
@@ -49,21 +57,6 @@ pub const TraceCapture = struct {
         return self.final_speed_bits_per_sec / 1_000_000;
     }
 };
-
-fn speedMeasurementFromBitsPerSecond(bits_per_second: f64) SpeedMeasurement {
-    const abs_speed = @abs(bits_per_second);
-
-    if (abs_speed >= 1_000_000_000) {
-        return SpeedMeasurement{ .value = bits_per_second / 1_000_000_000, .unit = .gbps };
-    }
-    if (abs_speed >= 1_000_000) {
-        return SpeedMeasurement{ .value = bits_per_second / 1_000_000, .unit = .mbps };
-    }
-    if (abs_speed >= 1_000) {
-        return SpeedMeasurement{ .value = bits_per_second / 1_000, .unit = .kbps };
-    }
-    return SpeedMeasurement{ .value = bits_per_second, .unit = .bps };
-}
 
 pub const HTTPSpeedTester = struct {
     allocator: std.mem.Allocator,
@@ -207,8 +200,7 @@ pub const HTTPSpeedTester = struct {
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentDownloadBytes(workers);
                 bandwidth_meter.update_total(current_bytes);
-                const measurement = bandwidth_meter.bandwidthWithUnits();
-                progress_callback.call(measurement);
+                progress_callback.call(bandwidth_meter.speed());
             }
         }
 
@@ -266,8 +258,7 @@ pub const HTTPSpeedTester = struct {
             if (has_progress) {
                 const current_bytes = worker_manager.getCurrentUploadBytes(workers);
                 bandwidth_meter.update_total(current_bytes);
-                const measurement = bandwidth_meter.bandwidthWithUnits();
-                progress_callback.call(measurement);
+                progress_callback.call(bandwidth_meter.speed());
             }
         }
 
@@ -361,7 +352,7 @@ pub const HTTPSpeedTester = struct {
             }
 
             if (has_progress) {
-                progress_callback.call(speedMeasurementFromBitsPerSecond(decision.display_speed_bits_per_sec));
+                progress_callback.call(Speed.fromBitsPerSecond(decision.display_speed_bits_per_sec));
                 last_emitted_progress_speed_bits_per_sec = decision.display_speed_bits_per_sec;
             }
 
@@ -452,7 +443,7 @@ pub const HTTPSpeedTester = struct {
             }
 
             if (has_progress) {
-                progress_callback.call(speedMeasurementFromBitsPerSecond(decision.display_speed_bits_per_sec));
+                progress_callback.call(Speed.fromBitsPerSecond(decision.display_speed_bits_per_sec));
                 last_emitted_progress_speed_bits_per_sec = decision.display_speed_bits_per_sec;
             }
 

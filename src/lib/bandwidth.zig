@@ -15,11 +15,52 @@ pub const SpeedUnit = enum {
             .gbps => "Gbps",
         };
     }
+
+    fn bitsPerSecond(self: SpeedUnit) f64 {
+        return switch (self) {
+            .bps => 1,
+            .kbps => 1_000,
+            .mbps => 1_000_000,
+            .gbps => 1_000_000_000,
+        };
+    }
 };
 
 pub const SpeedMeasurement = struct {
     value: f64,
     unit: SpeedUnit,
+};
+
+pub const Speed = struct {
+    bits_per_second: f64,
+
+    pub fn fromBytesPerSecond(bytes_per_second: f64) Speed {
+        return fromBitsPerSecond(bytes_per_second * 8);
+    }
+
+    pub fn fromBitsPerSecond(bits_per_second: f64) Speed {
+        return .{ .bits_per_second = bits_per_second };
+    }
+
+    pub fn valueIn(self: Speed, unit: SpeedUnit) f64 {
+        return self.bits_per_second / unit.bitsPerSecond();
+    }
+
+    pub fn forDisplay(self: Speed) SpeedMeasurement {
+        const unit: SpeedUnit = if (@abs(self.bits_per_second) >= 1_000_000_000)
+            .gbps
+        else if (@abs(self.bits_per_second) >= 1_000_000)
+            .mbps
+        else if (@abs(self.bits_per_second) >= 1_000)
+            .kbps
+        else
+            .bps;
+
+        return .{
+            .value = self.valueIn(unit),
+            .unit = unit,
+        };
+    }
 };
 
 pub const BandwidthMeter = struct {
@@ -51,27 +92,8 @@ pub const BandwidthMeter = struct {
         return @as(f64, @floatFromInt(self._bytes_transferred)) / delta_secs;
     }
 
-    /// Get bandwidth with automatic unit selection for optimal readability
-    pub fn bandwidthWithUnits(self: *BandwidthMeter) SpeedMeasurement {
-        const speed_bps = self.bandwidth();
-        return selectOptimalUnit(speed_bps);
-    }
-
-    /// Convert bytes per second to optimal unit for display (in bits per second)
-    fn selectOptimalUnit(speed_bytes_per_sec: f64) SpeedMeasurement {
-        // Convert bytes/s to bits/s
-        const speed_bits_per_sec = speed_bytes_per_sec * 8.0;
-        const abs_speed = @abs(speed_bits_per_sec);
-
-        if (abs_speed >= 1_000_000_000) {
-            return SpeedMeasurement{ .value = speed_bits_per_sec / 1_000_000_000, .unit = .gbps };
-        } else if (abs_speed >= 1_000_000) {
-            return SpeedMeasurement{ .value = speed_bits_per_sec / 1_000_000, .unit = .mbps };
-        } else if (abs_speed >= 1_000) {
-            return SpeedMeasurement{ .value = speed_bits_per_sec / 1_000, .unit = .kbps };
-        } else {
-            return SpeedMeasurement{ .value = speed_bits_per_sec, .unit = .bps };
-        }
+    pub fn speed(self: *BandwidthMeter) Speed {
+        return Speed.fromBytesPerSecond(self.bandwidth());
     }
 };
 
@@ -130,9 +152,48 @@ test "BandwidthMeter unit conversion" {
     meter._started_at = .now(testing.io, .awake);
     try testing.io.sleep(.fromSeconds(1), .awake);
 
-    const measurement = meter.bandwidthWithUnits();
+    const measurement = meter.speed().forDisplay();
 
     // Should automatically select appropriate unit
     try testing.expect(measurement.value > 0);
     try testing.expect(measurement.unit != .gbps); // Shouldn't be gigabits for small test
+}
+
+test "Speed converts bytes per second to canonical bits per second" {
+    const speed = Speed.fromBytesPerSecond(312_500_000);
+
+    try testing.expectEqual(@as(f64, 2_500_000_000), speed.bits_per_second);
+    try testing.expectEqual(@as(f64, 2_500), speed.valueIn(.mbps));
+}
+
+test "Speed converts canonical bits per second to every unit" {
+    const speed = Speed.fromBitsPerSecond(2_500_000_000);
+
+    try testing.expectEqual(@as(f64, 2_500_000_000), speed.valueIn(.bps));
+    try testing.expectEqual(@as(f64, 2_500_000), speed.valueIn(.kbps));
+    try testing.expectEqual(@as(f64, 2_500), speed.valueIn(.mbps));
+    try testing.expectEqual(@as(f64, 2.5), speed.valueIn(.gbps));
+}
+
+test "Speed selects display units at decimal boundaries" {
+    const cases = [_]struct {
+        bits_per_second: f64,
+        expected_value: f64,
+        expected_unit: SpeedUnit,
+    }{
+        .{ .bits_per_second = 0, .expected_value = 0, .expected_unit = .bps },
+        .{ .bits_per_second = 999, .expected_value = 999, .expected_unit = .bps },
+        .{ .bits_per_second = 1_000, .expected_value = 1, .expected_unit = .kbps },
+        .{ .bits_per_second = 999_999, .expected_value = 999.999, .expected_unit = .kbps },
+        .{ .bits_per_second = 1_000_000, .expected_value = 1, .expected_unit = .mbps },
+        .{ .bits_per_second = 999_999_999, .expected_value = 999.999999, .expected_unit = .mbps },
+        .{ .bits_per_second = 1_000_000_000, .expected_value = 1, .expected_unit = .gbps },
+        .{ .bits_per_second = -1_000_000_000, .expected_value = -1, .expected_unit = .gbps },
+    };
+
+    for (cases) |case| {
+        const display = Speed.fromBitsPerSecond(case.bits_per_second).forDisplay();
+        try testing.expectApproxEqAbs(case.expected_value, display.value, 1e-9);
+        try testing.expectEqual(case.expected_unit, display.unit);
+    }
 }

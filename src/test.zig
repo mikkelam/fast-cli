@@ -4,7 +4,9 @@ test "all" {
     // Core lib modules with tests
     _ = @import("lib/fast.zig");
     _ = @import("lib/bandwidth.zig");
+    _ = @import("lib/http_speed_tester_v2.zig");
     _ = @import("lib/http_latency_tester.zig");
+    _ = @import("lib/progress.zig");
     _ = @import("lib/spinner/spinner.zig");
     _ = @import("lib/workers/speed_worker.zig");
 

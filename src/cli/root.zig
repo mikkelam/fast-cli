@@ -8,7 +8,7 @@ const Fast = @import("../lib/fast.zig").Fast;
 const HTTPSpeedTester = @import("../lib/http_speed_tester_v2.zig").HTTPSpeedTester;
 const StabilityCriteria = @import("../lib/http_speed_tester_v2.zig").StabilityCriteria;
 const SpeedTestResult = @import("../lib/http_speed_tester_v2.zig").SpeedTestResult;
-const SpeedMeasurement = @import("../lib/bandwidth.zig").SpeedMeasurement;
+const Speed = @import("../lib/bandwidth.zig").Speed;
 const progress = @import("../lib/progress.zig");
 const HttpLatencyTester = @import("../lib/http_latency_tester.zig").HttpLatencyTester;
 
@@ -111,7 +111,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, process_args: std.process.A
 
         upload_result = if (args.json) blk: {
             break :blk speed_tester.measure_upload_speed_stability(urls, criteria) catch {
-                try outputJson(io, download_result.speed.value, latency_ms, null, "Upload test failed");
+                try outputJson(io, download_result.speed.valueIn(.mbps), latency_ms, null, "Upload test failed");
                 return;
             };
         } else blk: {
@@ -126,30 +126,35 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, process_args: std.process.A
 
     // Output results
     if (!args.json) {
+        const download = download_result.speed.forDisplay();
         if (latency_ms) |ping| {
             if (upload_result) |up| {
-                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                const upload = up.speed.forDisplay();
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ ping, download.value, download.unit.toString(), upload.value, upload.unit.toString() });
             } else {
-                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s}", .{ ping, download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("🏓 {d:.0}ms | ⬇️ Download: {d:.0} {s}", .{ ping, download.value, download.unit.toString() });
             }
         } else {
             if (upload_result) |up| {
-                try spinner.succeed("⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ download_result.speed.value, download_result.speed.unit.toString(), up.speed.value, up.speed.unit.toString() });
+                const upload = up.speed.forDisplay();
+                try spinner.succeed("⬇️ Download: {d:.0} {s} | ⬆️ Upload: {d:.0} {s}", .{ download.value, download.unit.toString(), upload.value, upload.unit.toString() });
             } else {
-                try spinner.succeed("⬇️ Download: {d:.0} {s}", .{ download_result.speed.value, download_result.speed.unit.toString() });
+                try spinner.succeed("⬇️ Download: {d:.0} {s}", .{ download.value, download.unit.toString() });
             }
         }
     } else {
-        const upload_speed = if (upload_result) |up| up.speed.value else null;
-        try outputJson(io, download_result.speed.value, latency_ms, upload_speed, null);
+        const upload_mbps = if (upload_result) |up| up.speed.valueIn(.mbps) else null;
+        try outputJson(io, download_result.speed.valueIn(.mbps), latency_ms, upload_mbps, null);
     }
 }
 
-fn updateSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
+fn updateSpinnerText(spinner: *Spinner, speed: Speed) void {
+    const measurement = speed.forDisplay();
     spinner.updateMessage("⬇️ {d:.0} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
-fn updateUploadSpinnerText(spinner: *Spinner, measurement: SpeedMeasurement) void {
+fn updateUploadSpinnerText(spinner: *Spinner, speed: Speed) void {
+    const measurement = speed.forDisplay();
     spinner.updateMessage("⬆️ {d:.0} {s}", .{ measurement.value, measurement.unit.toString() }) catch {};
 }
 
