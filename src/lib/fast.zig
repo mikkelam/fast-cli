@@ -13,6 +13,7 @@ const FastError = error{
     TokenNotFound,
     JsonParseError,
     ConnectionTimeout,
+    CertificateBundleLoadFailure,
 };
 
 const Location = struct { city: []const u8, country: []const u8 };
@@ -178,6 +179,10 @@ pub const Fast = struct {
             error.TlsInitializationFailed => {
                 log.err("Failed to establish secure connection to fast.com servers for URL: {s}", .{url});
                 return error.ConnectionTimeout;
+            },
+            error.CertificateBundleLoadFailure => {
+                log.err("Failed to load system CA certificates for URL: {s}", .{url});
+                return error.CertificateBundleLoadFailure;
             },
             else => {
                 log.err("Network error: {} for URL: {s}", .{ err, url });

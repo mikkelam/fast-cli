@@ -12,6 +12,8 @@ const Speed = @import("../lib/bandwidth.zig").Speed;
 const progress = @import("../lib/progress.zig");
 const HttpLatencyTester = @import("../lib/http_latency_tester.zig").HttpLatencyTester;
 
+const certificate_bundle_error_message = "Failed to load system CA certificates (on Linux, install ca-certificates)";
+
 pub fn run(allocator: std.mem.Allocator, io: std.Io, process_args: std.process.Args) !void {
     var args = try Args.parse(allocator, io, process_args);
     defer args.deinit();
@@ -36,10 +38,14 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, process_args: std.process.A
 
     const urls = fast.get_urls(5) catch |err| {
         if (!args.json) {
-            try spinner.fail("Failed to get URLs: {}", .{err});
+            switch (err) {
+                error.CertificateBundleLoadFailure => try spinner.fail("{s}", .{certificate_bundle_error_message}),
+                else => try spinner.fail("Failed to get URLs: {}", .{err}),
+            }
         } else {
             const error_msg = switch (err) {
                 error.ConnectionTimeout => "Failed to contact fast.com servers",
+                error.CertificateBundleLoadFailure => certificate_bundle_error_message,
                 else => "Failed to get URLs",
             };
             try outputJson(io, null, null, null, error_msg);

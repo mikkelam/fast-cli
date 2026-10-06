@@ -35,6 +35,8 @@ curl -sSL https://raw.githubusercontent.com/mikkelam/fast-cli/main/install.sh | 
 
 `install.sh` currently supports Linux and macOS only (not Windows yet).
 
+HTTPS uses the operating system's trusted CA certificates. Minimal Linux installations may need the `ca-certificates` package.
+
 ### Pre-built Binaries
 Try it from [Nixpkgs](https://nixos.org) with `nix shell nixpkgs#fast-cli-zig` 
 
