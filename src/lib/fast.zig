@@ -5,12 +5,11 @@ const testing = std.testing;
 
 const log = std.log.scoped(.fast_api);
 
-const mvzr = @import("mvzr");
+const api_token = "YXNkZmFzZGxmbnNkYWZoYXNkZmhrYWxm";
 
 const FastError = error{
     HttpRequestFailed,
-    ScriptNotFound,
-    TokenNotFound,
+    ApiAccessDenied,
     JsonParseError,
     ConnectionTimeout,
     CertificateBundleLoadFailure,
@@ -62,9 +61,7 @@ pub const Fast = struct {
     pub fn get_urls(self: *Fast, url_count: u64) ![]const []const u8 {
         const allocator = self.arena.allocator();
 
-        const token = try self.get_token(allocator);
-        log.debug("Found token: {s}", .{token});
-        const url = try std.fmt.allocPrint(allocator, "{s}://api.fast.com/netflix/speedtest/v2?https={}&token={s}&urlCount={d}", .{ self.get_http_protocol(), self.use_https, token, url_count });
+        const url = try std.fmt.allocPrint(allocator, "{s}://api.fast.com/netflix/speedtest/v2?https={}&token={s}&urlCount={d}", .{ self.get_http_protocol(), self.use_https, api_token, url_count });
 
         log.debug("Getting download URLs from: {s}", .{url});
 
@@ -126,35 +123,6 @@ pub const Fast = struct {
         return result;
     }
 
-    fn extract_script_name(html_content: []const u8) ![]const u8 {
-        const script_re = mvzr.compile("app-[a-zA-Z0-9]+\\.js").?;
-        const script_match: mvzr.Match = script_re.match(html_content) orelse
-            return error.ScriptNotFound;
-        return html_content[script_match.start..script_match.end];
-    }
-
-    fn extract_token(script_content: []const u8, allocator: std.mem.Allocator) ![]const u8 {
-        const token_re = mvzr.compile("token:\"[a-zA-Z0-9]*\"").?;
-        const token_match = token_re.match(script_content) orelse
-            return error.TokenNotFound;
-        const token_with_prefix = script_content[token_match.start..token_match.end];
-        return allocator.dupe(u8, token_with_prefix[7 .. token_with_prefix.len - 1]);
-    }
-
-    /// This function searches for the token in the javascript returned by the fast.com public website
-    fn get_token(self: *Fast, allocator: std.mem.Allocator) ![]const u8 {
-        const base_url = try std.fmt.allocPrint(allocator, "{s}://fast.com", .{self.get_http_protocol()});
-
-        const fast_body = try self.get_page(allocator, base_url);
-        const script_name = try extract_script_name(fast_body.items);
-        const script_url = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ base_url, script_name });
-
-        // print("getting fast api token from {s}\n", .{script_url});
-
-        const resp_body = try self.get_page(allocator, script_url);
-        return extract_token(resp_body.items, allocator);
-    }
-
     fn get_page(self: *Fast, allocator: std.mem.Allocator, url: []const u8) !std.ArrayList(u8) {
         var response_body = std.Io.Writer.Allocating.init(allocator);
 
@@ -191,6 +159,11 @@ pub const Fast = struct {
         };
 
         log.debug("HTTP response status: {} for URL: {s}", .{ response.status, url });
+
+        if (response.status == .forbidden) {
+            log.err("Fast.com API denied access (HTTP 403); the bundled token may need updating", .{});
+            return error.ApiAccessDenied;
+        }
 
         if (response.status != .ok) {
             log.err("HTTP request failed with status code {}", .{response.status});
@@ -250,24 +223,6 @@ test "sanitize_json_removes_invalid_utf8" {
         try testing.expect(byte <= 127);
     }
     try testing.expect(found_space); // Should have replaced invalid byte with space
-}
-
-test "extract_script_name" {
-    const html =
-        \\<html><head><script src="app-1234abcd.js"></script></head></html>
-    ;
-    const script_name = try Fast.extract_script_name(html);
-    try testing.expect(std.mem.eql(u8, script_name, "app-1234abcd.js"));
-}
-
-test "extract_token" {
-    const script_content =
-        \\var config = {token:"abcdef123456", other: "value"};
-    ;
-    const allocator = testing.allocator;
-    const token = try Fast.extract_token(script_content, allocator);
-    defer allocator.free(token);
-    try testing.expect(std.mem.eql(u8, token, "abcdef123456"));
 }
 
 test "parse_response_without_isp" {
